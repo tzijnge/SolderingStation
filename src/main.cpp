@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <TFT_eSPI.h>
 #include <SparkFun_Qwiic_Twist_Arduino_Library.h>
+#include <etl/callback_timer_interrupt.h>
 #include <etl/delegate.h>
 #include <etl/function.h>
 #include <etl/scheduler.h>
@@ -9,8 +10,8 @@
 #include "counter/Counter.h"
 #include "counter/CounterDisplay.h"
 #include "counter/CounterPwmOutput.h"
-#include "tasks/ButtonTask.h"
 #include "tasks/EncoderTask.h"
+#include "tasks/NotifyTask.h"
 
 TFT_eSPI tft;
 TWIST twist;
@@ -19,7 +20,7 @@ TWIST twist;
 // (1, 2, 4, 6, 7, 8) documented in the library README.
 constexpr uint8_t SEVEN_SEGMENT_FONT = 7;
 
-CounterDisplay display(tft);
+CounterDisplay display(tft, 90);
 CounterPwmOutput pwmOutput(BCM23);
 
 // The only place the counter's value and its 0..255 clamp live. Neither
@@ -39,13 +40,36 @@ EncoderTask encoderTask(twist, BCM21,
 // which a plain bound-member delegate can't express, hence these small
 // lambdas rather than binding straight to Counter::diff/reset. Like all
 // etl::delegate use in this project, they must be named objects with
-// program lifetime, never inline lambda literals (see ButtonTask for why).
+// program lifetime, never inline lambda literals (see NotifyTask for why).
 auto decrementCounter = []() { counter.diff(-1); };
 auto resetCounter = []() { counter.reset(); };
 auto incrementCounter = []() { counter.diff(1); };
-ButtonTask leftButtonTask(decrementCounter);
-ButtonTask middleButtonTask(resetCounter);
-ButtonTask rightButtonTask(incrementCounter);
+NotifyTask leftButtonTask(decrementCounter);
+NotifyTask middleButtonTask(resetCounter);
+NotifyTask rightButtonTask(incrementCounter);
+
+// A second, independent counter driven by 1-second and 30-second software
+// timers instead of hardware input, just to prove the timer plumbing out -
+// see secondsTimer/sysTickHook() below for how they actually tick.
+CounterDisplay secondsDisplay(tft, 150); // font 7 is 48px tall, so 90+48 clears the first display with a small margin
+Counter secondsCounter;
+auto incrementSeconds = []() { secondsCounter.diff(1); };
+auto resetSeconds = []() { secondsCounter.reset(); };
+NotifyTask secondsTask(incrementSeconds);
+NotifyTask resetSecondsTask(resetSeconds);
+
+// Guards register_timer()/start()/stop() (called from setup(), i.e. normal
+// code) against a concurrent SysTick interrupt calling tick() mid-update -
+// tick() itself doesn't need guarding since it *is* that interrupt.
+struct SysTickGuard {
+  SysTickGuard() { NVIC_DisableIRQ(SysTick_IRQn); }
+  ~SysTickGuard() { NVIC_EnableIRQ(SysTick_IRQn); }
+};
+
+// A 1-second repeating tick and a 30-second repeating reset. tick() is
+// called with a 1ms count from sysTickHook() below, so periods registered
+// on this are in milliseconds.
+etl::callback_timer_interrupt<2, SysTickGuard> secondsTimer;
 
 // "Single" (not "multiple"): processes at most one unit of work per task
 // per round before moving to the next, so a task whose task_request_work()
@@ -54,13 +78,13 @@ ButtonTask rightButtonTask(incrementCounter);
 // display and pwmOutput aren't scheduler tasks at all - each update
 // happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 4> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 6> scheduler;
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
 // doesn't need it), kept only in case some future library overrides that
 // weak hook. __WFI() sleeps the CPU until the next interrupt (a button
-// press, an encoder interrupt, or the 1ms SysTick tick).
+// press, an encoder interrupt, the 1ms SysTick tick, or ...).
 void onIdle() {
   yield();
   __WFI();
@@ -70,15 +94,28 @@ etl::function_fv<onIdle> idleCallback;
 
 // WIO_KEY_A/B/C are the three top buttons (variant.h). Confirmed on-device:
 // left = WIO_KEY_C, middle = WIO_KEY_B, right = WIO_KEY_A.
-void onLeftButton() { leftButtonTask.notifyPressed(); }
-void onMiddleButton() { middleButtonTask.notifyPressed(); }
-void onRightButton() { rightButtonTask.notifyPressed(); }
+void onLeftButton() { leftButtonTask.notify(); }
+void onMiddleButton() { middleButtonTask.notify(); }
+void onRightButton() { rightButtonTask.notify(); }
 
 // Twist's INT pad wired to BCM21 (40-pin header, physical position 40).
 void onEncoderInterrupt() {
   // Intentionally empty: EncoderTask::task_request_work() reads the pin
   // level directly. This callback exists only so the attached interrupt
   // wakes the CPU from __WFI() sleep promptly.
+}
+
+// Called from the real SysTick_Handler, before the Arduino core's own
+// default handler (see hooks.c) - this is what actually drives
+// secondsTimer, replacing millis()/delay()-based polling for anything this
+// project schedules on its own. Returning false lets the default handler
+// still run afterward so millis()/micros()/delay() keep working too (cheap
+// to leave alone, and some library init code still uses delay()
+// internally), but nothing in this project's own logic depends on them
+// anymore.
+extern "C" int sysTickHook(void) {
+  secondsTimer.tick(1);
+  return 0;
 }
 
 void setup() {
@@ -140,10 +177,25 @@ void setup() {
   counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterPwmOutput, &CounterPwmOutput::onCounterChanged>(pwmOutput));
   counter.begin(); // seed initial display/PWM state
 
+  secondsCounter.add_observer(etl::delegate<void(uint8_t)>::create<CounterDisplay, &CounterDisplay::onCounterChanged>(secondsDisplay));
+  secondsCounter.begin(); // seed initial display state
+
+  etl::timer::id::type secondsTimerId = secondsTimer.register_timer(
+      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(secondsTask), 1000U, true);
+  secondsTimer.start(secondsTimerId);
+
+  etl::timer::id::type resetSecondsTimerId = secondsTimer.register_timer(
+      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(resetSecondsTask), 30000U, true);
+  secondsTimer.start(resetSecondsTimerId);
+
+  secondsTimer.enable(true);
+
   scheduler.add_task(encoderTask);
   scheduler.add_task(leftButtonTask);
   scheduler.add_task(middleButtonTask);
   scheduler.add_task(rightButtonTask);
+  scheduler.add_task(secondsTask);
+  scheduler.add_task(resetSecondsTask);
   scheduler.set_idle_callback(idleCallback);
 }
 

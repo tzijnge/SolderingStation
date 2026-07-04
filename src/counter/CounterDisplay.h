@@ -10,7 +10,7 @@
 // with Counter as an etl::delegate observer (see main.cpp).
 class CounterDisplay {
 public:
-  explicit CounterDisplay(TFT_eSPI &tft_) : tft(tft_) {}
+  CounterDisplay(TFT_eSPI &tft_, int32_t y_) : tft(tft_), y(y_) {}
 
   void onCounterChanged(uint8_t value) {
     etl::string<16> text;
@@ -18,9 +18,10 @@ public:
 
     // drawString() only clears the padded box below, not the whole screen,
     // so the digits don't flash blank on every update.
-    tft.drawString(text.c_str(), 20, 90);
+    tft.drawString(text.c_str(), 20, y);
   }
 
 private:
   TFT_eSPI &tft;
+  int32_t y;
 };
