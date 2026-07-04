@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
-#undef round // Arduino.h's round() macro breaks ETL's to_string float formatting
 #include <SparkFun_Qwiic_Twist_Arduino_Library.h>
+#include <etl/delegate.h>
 #include <etl/task.h>
 
 #include "TaskPriority.h"
@@ -40,11 +40,21 @@
 // is still wired up (see onEncoderInterrupt in main.cpp), purely so
 // __WFI() wakes promptly on this pin instead of waiting for the next 1ms
 // SysTick tick; its callback doesn't need to do anything itself.
+//
+// EncoderTask knows nothing about Counter (or any other consumer) - it
+// just reports raw hardware events through onDiff_/onReset_, two
+// independently injected delegates. Like all etl::delegate use in this
+// project, these must be named objects with program lifetime (e.g. a
+// bound member-function delegate created in main.cpp), never an inline
+// lambda literal - etl::delegate is a non-owning reference to its
+// callable.
 class EncoderTask : public etl::task {
 public:
-  EncoderTask(TWIST &twist_, uint8_t &counter_, uint32_t intPin_)
-      : etl::task(TASK_PRIORITY_INPUT), twist(twist_), counter(counter_),
-        intPin(intPin_) {}
+  EncoderTask(TWIST &twist_, uint32_t intPin_,
+              etl::delegate<void(int16_t)> onDiff_,
+              etl::delegate<void(void)> onReset_)
+      : etl::task(TASK_PRIORITY_INPUT), twist(twist_), intPin(intPin_),
+        onDiff(onDiff_), onReset(onReset_) {}
 
   void on_task_added() override { lastRawCount = twist.getCount(); }
 
@@ -68,23 +78,29 @@ public:
     // observe it true rather than depending on one race-prone latch.
     twist.isMoved();
     int16_t rawCount = twist.getCount();
-    int16_t delta = rawCount - lastRawCount;
     // This board reports clockwise rotation as positive; negate here if
     // your unit behaves the other way.
-    int16_t newCounter = counter + delta;
-    counter = (newCounter < 0) ? 0 : (newCounter > 255) ? 255 : newCounter;
+    int16_t delta = rawCount - lastRawCount;
     lastRawCount = rawCount;
 
-    if (twist.isPressed()) {
-      counter = 0;
-    }
-
+    bool pressed = twist.isPressed();
     twist.isClicked(); // unused, but must still be cleared or INT line stays low
+
+    // A press takes precedence over any rotation reported in the same
+    // call (matching the WIO Terminal's own middle button), so a
+    // rotate-while-holding never fires a diff that the receiving end
+    // would immediately have to overwrite with the reset.
+    if (pressed) {
+      onReset();
+    } else if (delta != 0) {
+      onDiff(delta);
+    }
   }
 
 private:
   TWIST &twist;
-  uint8_t &counter;
   uint32_t intPin;
+  etl::delegate<void(int16_t)> onDiff;
+  etl::delegate<void(void)> onReset;
   int16_t lastRawCount = 0;
 };

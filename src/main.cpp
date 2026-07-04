@@ -2,13 +2,15 @@
 #include <Wire.h>
 #include <TFT_eSPI.h>
 #include <SparkFun_Qwiic_Twist_Arduino_Library.h>
+#include <etl/delegate.h>
 #include <etl/function.h>
 #include <etl/scheduler.h>
 
+#include "counter/Counter.h"
+#include "counter/CounterDisplay.h"
+#include "counter/CounterPwmOutput.h"
 #include "tasks/ButtonTask.h"
-#include "tasks/DisplayTask.h"
 #include "tasks/EncoderTask.h"
-#include "tasks/PwmTask.h"
 
 TFT_eSPI tft;
 TWIST twist;
@@ -17,22 +19,30 @@ TWIST twist;
 // (1, 2, 4, 6, 7, 8) documented in the library README.
 constexpr uint8_t SEVEN_SEGMENT_FONT = 7;
 
-uint8_t counter = 0;
+CounterDisplay display(tft);
+CounterPwmOutput pwmOutput(BCM23);
 
-EncoderTask encoderTask(twist, counter, BCM21);
-PwmTask pwmTask(BCM23, counter);
-DisplayTask displayTask(tft, counter);
+// The only place the counter's value and its 0..255 clamp live. Neither
+// producer below knows this type exists beyond what's bound into their
+// delegates (see counter.add_observer() calls in setup() for the other
+// direction, display/pwmOutput -> counter).
+Counter counter;
 
-// counter is global, so these don't need to capture it - keeping them
-// captureless also means they'd be convertible to a function pointer, but
-// they're still passed by name below, never as literals (see ButtonTask).
-auto decrementCounter = []() {
-  if (counter > 0) --counter;
-};
-auto resetCounter = []() { counter = 0; };
-auto incrementCounter = []() {
-  if (counter < 255) ++counter;
-};
+// onDiff/onReset bind directly to Counter's own methods - no wrapper
+// needed since the delegate signatures already match exactly. EncoderTask
+// itself never sees the Counter type.
+EncoderTask encoderTask(twist, BCM21,
+                        etl::delegate<void(int16_t)>::create<Counter, &Counter::diff>(counter),
+                        etl::delegate<void(void)>::create<Counter, &Counter::reset>(counter));
+
+// Each button needs a fixed argument (+-1) or no argument at all baked in,
+// which a plain bound-member delegate can't express, hence these small
+// lambdas rather than binding straight to Counter::diff/reset. Like all
+// etl::delegate use in this project, they must be named objects with
+// program lifetime, never inline lambda literals (see ButtonTask for why).
+auto decrementCounter = []() { counter.diff(-1); };
+auto resetCounter = []() { counter.reset(); };
+auto incrementCounter = []() { counter.diff(1); };
 ButtonTask leftButtonTask(decrementCounter);
 ButtonTask middleButtonTask(resetCounter);
 ButtonTask rightButtonTask(incrementCounter);
@@ -40,9 +50,11 @@ ButtonTask rightButtonTask(incrementCounter);
 // "Single" (not "multiple"): processes at most one unit of work per task
 // per round before moving to the next, so a task whose task_request_work()
 // stays true for an extended period (e.g. EncoderTask while the Twist's
-// button is held) can't starve the tasks after it in the list, like
-// DisplayTask, from ever getting a turn.
-etl::scheduler<etl::scheduler_policy_sequential_single, 6> scheduler;
+// button is held) can't starve the tasks after it in the list. counter,
+// display and pwmOutput aren't scheduler tasks at all - each update
+// happens synchronously, inline, as part of the producing task's
+// task_process_work() call.
+etl::scheduler<etl::scheduler_policy_sequential_single, 4> scheduler;
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
@@ -123,12 +135,15 @@ void setup() {
   tft.setTextSize(1);
   tft.setTextPadding(260); // fixed-width clear box, big enough for e.g. "-32768"
 
+  pwmOutput.begin();
+  counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterDisplay, &CounterDisplay::onCounterChanged>(display));
+  counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterPwmOutput, &CounterPwmOutput::onCounterChanged>(pwmOutput));
+  counter.begin(); // seed initial display/PWM state
+
   scheduler.add_task(encoderTask);
   scheduler.add_task(leftButtonTask);
   scheduler.add_task(middleButtonTask);
   scheduler.add_task(rightButtonTask);
-  scheduler.add_task(pwmTask);
-  scheduler.add_task(displayTask);
   scheduler.set_idle_callback(idleCallback);
 }
 

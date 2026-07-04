@@ -7,7 +7,10 @@
 #include "TaskPriority.h"
 
 // One button: an ISR (notifyPressed()) increments an atomic pending count,
-// and the scheduler drains it, invoking the bound action once per press.
+// and the scheduler drains it, invoking onPress_ once per press.
+// ButtonTask knows nothing about Counter or any other consumer - onPress_
+// is injected per instance (e.g. a lambda that calls counter.diff(-1) in
+// main.cpp), so one generic class serves all three buttons.
 //
 // etl::delegate is a non-owning reference to its callable - it just stores
 // a pointer to it - so onPress_ must be a named object with program
