@@ -7,11 +7,14 @@
 #include <etl/function.h>
 #include <etl/scheduler.h>
 
+#include "adc/AdcInput.h"
 #include "counter/Counter.h"
 #include "counter/CounterDisplay.h"
 #include "counter/CounterPwmOutput.h"
 #include "tasks/EncoderTask.h"
 #include "tasks/NotifyTask.h"
+#include "temperature/TipTemperature.h"
+#include "temperature/TipTemperatureDisplay.h"
 
 TFT_eSPI tft;
 TWIST twist;
@@ -20,7 +23,10 @@ TWIST twist;
 // (1, 2, 4, 6, 7, 8) documented in the library README.
 constexpr uint8_t SEVEN_SEGMENT_FONT = 7;
 
-CounterDisplay display(tft, 90);
+// This panel is 320x240 in landscape (setRotation(3)), so three 48px-tall
+// font 7 rows have to fit within a 240px height - evenly spaced 80px apart
+// (20, 100, 180) leaves a comfortable margin above/below/between all three.
+CounterDisplay display(tft, 20, TFT_GREEN); // button/encoder controlled
 CounterPwmOutput pwmOutput(BCM23);
 
 // The only place the counter's value and its 0..255 clamp live. Neither
@@ -50,13 +56,25 @@ NotifyTask rightButtonTask(incrementCounter);
 
 // A second, independent counter driven by 1-second and 30-second software
 // timers instead of hardware input, just to prove the timer plumbing out -
-// see secondsTimer/sysTickHook() below for how they actually tick.
-CounterDisplay secondsDisplay(tft, 150); // font 7 is 48px tall, so 90+48 clears the first display with a small margin
+// see swTimer/sysTickHook() below for how they actually tick.
+CounterDisplay secondsDisplay(tft, 100, TFT_YELLOW); // timer controlled
 Counter secondsCounter;
 auto incrementSeconds = []() { secondsCounter.diff(1); };
 auto resetSeconds = []() { secondsCounter.reset(); };
 NotifyTask secondsTask(incrementSeconds);
 NotifyTask resetSecondsTask(resetSeconds);
+
+// Raw 12-bit ADC reading (0..4095, VDDANA/3.3V reference - both are this
+// board's defaults) on A3/BCM24/40-pin header pin 18, sampled every 100ms
+// (see swTimer below), converted by tipTemperature into a whole-degree
+// Celsius tip temperature (see temperature/TipTemperature.h for the
+// sensor/amplifier/ADC math) and displayed. Not built on Counter - neither
+// a raw ADC sample nor a temperature reading has diff/reset/clamp
+// semantics, so that abstraction doesn't fit here.
+TipTemperatureDisplay temperatureDisplay(tft, 180, TFT_MAGENTA);
+TipTemperature tipTemperature;
+AdcInput adcInput(A3);
+NotifyTask adcSampleTask(etl::delegate<void(void)>::create<AdcInput, &AdcInput::sample>(adcInput));
 
 // Guards register_timer()/start()/stop() (called from setup(), i.e. normal
 // code) against a concurrent SysTick interrupt calling tick() mid-update -
@@ -66,10 +84,12 @@ struct SysTickGuard {
   ~SysTickGuard() { NVIC_EnableIRQ(SysTick_IRQn); }
 };
 
-// A 1-second repeating tick and a 30-second repeating reset. tick() is
-// called with a 1ms count from sysTickHook() below, so periods registered
-// on this are in milliseconds.
-etl::callback_timer_interrupt<2, SysTickGuard> secondsTimer;
+// A 1-second repeating counter tick, a 30-second repeating counter reset,
+// and a 100ms repeating ADC sample - all unrelated to each other, this is
+// just where this project's software timers live. tick() is called with a
+// 1ms count from sysTickHook() below, so periods registered on this are in
+// milliseconds.
+etl::callback_timer_interrupt<3, SysTickGuard> swTimer;
 
 // "Single" (not "multiple"): processes at most one unit of work per task
 // per round before moving to the next, so a task whose task_request_work()
@@ -78,7 +98,7 @@ etl::callback_timer_interrupt<2, SysTickGuard> secondsTimer;
 // display and pwmOutput aren't scheduler tasks at all - each update
 // happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 6> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 7> scheduler;
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
@@ -106,15 +126,14 @@ void onEncoderInterrupt() {
 }
 
 // Called from the real SysTick_Handler, before the Arduino core's own
-// default handler (see hooks.c) - this is what actually drives
-// secondsTimer, replacing millis()/delay()-based polling for anything this
-// project schedules on its own. Returning false lets the default handler
-// still run afterward so millis()/micros()/delay() keep working too (cheap
-// to leave alone, and some library init code still uses delay()
-// internally), but nothing in this project's own logic depends on them
-// anymore.
+// default handler (see hooks.c) - this is what actually drives swTimer,
+// replacing millis()/delay()-based polling for anything this project
+// schedules on its own. Returning false lets the default handler still run
+// afterward so millis()/micros()/delay() keep working too (cheap to leave
+// alone, and some library init code still uses delay() internally), but
+// nothing in this project's own logic depends on them anymore.
 extern "C" int sysTickHook(void) {
-  secondsTimer.tick(1);
+  swTimer.tick(1);
   return 0;
 }
 
@@ -170,7 +189,7 @@ void setup() {
   tft.setTextDatum(TL_DATUM);
   tft.setTextFont(SEVEN_SEGMENT_FONT); // 0-9, ':', '-', '.'
   tft.setTextSize(1);
-  tft.setTextPadding(260); // fixed-width clear box, big enough for e.g. "-32768"
+  tft.setTextPadding(TipTemperatureDisplay::NUMBER_PADDING); // shared with TipTemperatureDisplay's suffix positioning - see its header
 
   pwmOutput.begin();
   counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterDisplay, &CounterDisplay::onCounterChanged>(display));
@@ -180,15 +199,25 @@ void setup() {
   secondsCounter.add_observer(etl::delegate<void(uint8_t)>::create<CounterDisplay, &CounterDisplay::onCounterChanged>(secondsDisplay));
   secondsCounter.begin(); // seed initial display state
 
-  etl::timer::id::type secondsTimerId = secondsTimer.register_timer(
+  analogReadResolution(12); // 0..4095 instead of the default 10-bit 0..1023
+  temperatureDisplay.begin(); // draws the static degree-C suffix once
+  tipTemperature.add_observer(etl::delegate<void(int16_t)>::create<TipTemperatureDisplay, &TipTemperatureDisplay::onTemperatureChanged>(temperatureDisplay));
+  adcInput.add_observer(etl::delegate<void(uint16_t)>::create<TipTemperature, &TipTemperature::onAdcSample>(tipTemperature));
+  adcInput.sample(); // seeds tipTemperature, which seeds temperatureDisplay in turn
+
+  etl::timer::id::type secondsTimerId = swTimer.register_timer(
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(secondsTask), 1000U, true);
-  secondsTimer.start(secondsTimerId);
+  swTimer.start(secondsTimerId);
 
-  etl::timer::id::type resetSecondsTimerId = secondsTimer.register_timer(
+  etl::timer::id::type resetSecondsTimerId = swTimer.register_timer(
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(resetSecondsTask), 30000U, true);
-  secondsTimer.start(resetSecondsTimerId);
+  swTimer.start(resetSecondsTimerId);
 
-  secondsTimer.enable(true);
+  etl::timer::id::type adcTimerId = swTimer.register_timer(
+      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(adcSampleTask), 100U, true);
+  swTimer.start(adcTimerId);
+
+  swTimer.enable(true);
 
   scheduler.add_task(encoderTask);
   scheduler.add_task(leftButtonTask);
@@ -196,6 +225,7 @@ void setup() {
   scheduler.add_task(rightButtonTask);
   scheduler.add_task(secondsTask);
   scheduler.add_task(resetSecondsTask);
+  scheduler.add_task(adcSampleTask);
   scheduler.set_idle_callback(idleCallback);
 }
 
