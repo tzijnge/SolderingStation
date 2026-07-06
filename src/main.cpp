@@ -10,11 +10,13 @@
 #include "adc/AdcInput.h"
 #include "counter/Counter.h"
 #include "counter/CounterDisplay.h"
+#include "counter/CounterDisplayTask.h"
 #include "counter/CounterPwmOutput.h"
 #include "tasks/EncoderTask.h"
 #include "tasks/NotifyTask.h"
 #include "temperature/TipTemperature.h"
 #include "temperature/TipTemperatureDisplay.h"
+#include "temperature/TipTemperatureDisplayTask.h"
 
 TFT_eSPI tft;
 TWIST twist;
@@ -31,8 +33,8 @@ CounterPwmOutput pwmOutput(BCM23);
 
 // The only place the counter's value and its 0..255 clamp live. Neither
 // producer below knows this type exists beyond what's bound into their
-// delegates (see counter.add_observer() calls in setup() for the other
-// direction, display/pwmOutput -> counter).
+// delegates. pwmOutput observes it directly (see counter.add_observer()
+// in setup()); counterDisplayTask polls it instead (see below).
 Counter counter;
 
 // onDiff/onReset bind directly to Counter's own methods - no wrapper
@@ -54,6 +56,11 @@ NotifyTask leftButtonTask(decrementCounter);
 NotifyTask middleButtonTask(resetCounter);
 NotifyTask rightButtonTask(incrementCounter);
 
+// Polls counter rather than observing it - see CounterDisplayTask and
+// Counter's own comments for why the redraw is decoupled from whichever
+// task (a button or the encoder) just changed the value.
+CounterDisplayTask counterDisplayTask(counter, display);
+
 // A second, independent counter driven by 1-second and 30-second software
 // timers instead of hardware input, just to prove the timer plumbing out -
 // see swTimer/sysTickHook() below for how they actually tick.
@@ -63,18 +70,27 @@ auto incrementSeconds = []() { secondsCounter.diff(1); };
 auto resetSeconds = []() { secondsCounter.reset(); };
 NotifyTask secondsTask(incrementSeconds);
 NotifyTask resetSecondsTask(resetSeconds);
+CounterDisplayTask secondsDisplayTask(secondsCounter, secondsDisplay);
 
 // Raw 12-bit ADC reading (0..4095, VDDANA/3.3V reference - both are this
-// board's defaults) on A3/BCM24/40-pin header pin 18, sampled every 100ms
-// (see swTimer below), converted by tipTemperature into a whole-degree
-// Celsius tip temperature (see temperature/TipTemperature.h for the
-// sensor/amplifier/ADC math) and displayed. Not built on Counter - neither
-// a raw ADC sample nor a temperature reading has diff/reset/clamp
-// semantics, so that abstraction doesn't fit here.
+// board's defaults) on A3/BCM24/40-pin header pin 18, sampled once per
+// 100ms cycle (see pauseForMeasurement/measureAndResume below - PWM is
+// paused around each sample to keep its switching noise out of the
+// reading), converted by tipTemperature into a whole-degree Celsius tip
+// temperature (see temperature/TipTemperature.h for the sensor/amplifier/
+// ADC math). Not built on Counter - neither a raw ADC sample nor a
+// temperature reading has diff/reset/clamp semantics, so that abstraction
+// doesn't fit here.
+//
+// temperatureDisplayTask (declared after swTimer below, alongside the
+// other tasks) polls tipTemperature and redraws on its own turn in the
+// scheduler - deliberately decoupled from onAdcSample() itself, since
+// that redraw is a slow (~17ms, see project notes) SPI write and
+// measureAndResume() needs pwmOutput.resume() to run right after
+// sampling, not after whatever a redraw happens to cost that cycle.
 TipTemperatureDisplay temperatureDisplay(tft, 180, TFT_MAGENTA);
 TipTemperature tipTemperature;
 AdcInput adcInput(A3);
-NotifyTask adcSampleTask(etl::delegate<void(void)>::create<AdcInput, &AdcInput::sample>(adcInput));
 
 // Guards register_timer()/start()/stop() (called from setup(), i.e. normal
 // code) against a concurrent SysTick interrupt calling tick() mid-update -
@@ -85,11 +101,36 @@ struct SysTickGuard {
 };
 
 // A 1-second repeating counter tick, a 30-second repeating counter reset,
-// and a 100ms repeating ADC sample - all unrelated to each other, this is
-// just where this project's software timers live. tick() is called with a
-// 1ms count from sysTickHook() below, so periods registered on this are in
-// milliseconds.
-etl::callback_timer_interrupt<3, SysTickGuard> swTimer;
+// a 100ms repeating PWM-pause, and a 5ms one-shot ADC measurement (see
+// pauseForMeasurement/measureAndResume below) - all unrelated to each
+// other, this is just where this project's software timers live. tick()
+// is called with a 1ms count from sysTickHook() below, so periods
+// registered on this are in milliseconds.
+etl::callback_timer_interrupt<4, SysTickGuard> swTimer;
+
+// pwmOutput switching is a noise source for the ADC reading, so each
+// measurement cycle pauses it first: a 100ms repeating timer pauses PWM
+// and arms a 5ms one-shot (registered once in setup(), non-repeating,
+// just re-started here each cycle) to give the switching noise time to
+// settle before the actual sample is taken and PWM resumed.
+etl::timer::id::type measureTimerId; // assigned once in setup()
+
+// Oscilloscope debug signal - see TipTemperatureDisplayTask.h, which
+// currently brackets it around the (slow, SPI-bound) redraw itself, for a
+// baseline measurement of that cost.
+constexpr uint32_t MEASUREMENT_DEBUG_PIN = BCM20;
+
+auto pauseForMeasurement = []() {
+  pwmOutput.pause();
+  swTimer.start(measureTimerId);
+};
+auto measureAndResume = []() {
+  adcInput.sample();
+  pwmOutput.resume();
+};
+NotifyTask pwmPauseTask(pauseForMeasurement);
+NotifyTask adcSampleTask(measureAndResume);
+TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisplay);
 
 // "Single" (not "multiple"): processes at most one unit of work per task
 // per round before moving to the next, so a task whose task_request_work()
@@ -98,7 +139,7 @@ etl::callback_timer_interrupt<3, SysTickGuard> swTimer;
 // display and pwmOutput aren't scheduler tasks at all - each update
 // happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 7> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 11> scheduler;
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
@@ -186,24 +227,22 @@ void setup() {
   pinMode(BCM21, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BCM21), onEncoderInterrupt, FALLING);
 
+  pinMode(MEASUREMENT_DEBUG_PIN, OUTPUT);
+  digitalWrite(MEASUREMENT_DEBUG_PIN, LOW);
+
   tft.setTextDatum(TL_DATUM);
   tft.setTextFont(SEVEN_SEGMENT_FONT); // 0-9, ':', '-', '.'
   tft.setTextSize(1);
   tft.setTextPadding(TipTemperatureDisplay::NUMBER_PADDING); // shared with TipTemperatureDisplay's suffix positioning - see its header
 
   pwmOutput.begin();
-  counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterDisplay, &CounterDisplay::onCounterChanged>(display));
   counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterPwmOutput, &CounterPwmOutput::onCounterChanged>(pwmOutput));
-  counter.begin(); // seed initial display/PWM state
-
-  secondsCounter.add_observer(etl::delegate<void(uint8_t)>::create<CounterDisplay, &CounterDisplay::onCounterChanged>(secondsDisplay));
-  secondsCounter.begin(); // seed initial display state
+  counter.begin(); // seed initial PWM state (counterDisplayTask seeds the display itself, on its first poll)
 
   analogReadResolution(12); // 0..4095 instead of the default 10-bit 0..1023
   temperatureDisplay.begin(); // draws the static degree-C suffix once
-  tipTemperature.add_observer(etl::delegate<void(int16_t)>::create<TipTemperatureDisplay, &TipTemperatureDisplay::onTemperatureChanged>(temperatureDisplay));
   adcInput.add_observer(etl::delegate<void(uint16_t)>::create<TipTemperature, &TipTemperature::onAdcSample>(tipTemperature));
-  adcInput.sample(); // seeds tipTemperature, which seeds temperatureDisplay in turn
+  adcInput.sample(); // seeds tipTemperature; temperatureDisplayTask's first poll draws the initial number
 
   etl::timer::id::type secondsTimerId = swTimer.register_timer(
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(secondsTask), 1000U, true);
@@ -213,9 +252,14 @@ void setup() {
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(resetSecondsTask), 30000U, true);
   swTimer.start(resetSecondsTimerId);
 
-  etl::timer::id::type adcTimerId = swTimer.register_timer(
-      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(adcSampleTask), 100U, true);
-  swTimer.start(adcTimerId);
+  // Registered but not started - only re-started by pauseForMeasurement,
+  // repeating=false so it fires exactly once per arm.
+  measureTimerId = swTimer.register_timer(
+      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(adcSampleTask), 5U, false);
+
+  etl::timer::id::type pwmPauseTimerId = swTimer.register_timer(
+      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(pwmPauseTask), 100U, true);
+  swTimer.start(pwmPauseTimerId);
 
   swTimer.enable(true);
 
@@ -223,9 +267,13 @@ void setup() {
   scheduler.add_task(leftButtonTask);
   scheduler.add_task(middleButtonTask);
   scheduler.add_task(rightButtonTask);
+  scheduler.add_task(counterDisplayTask);
   scheduler.add_task(secondsTask);
   scheduler.add_task(resetSecondsTask);
+  scheduler.add_task(secondsDisplayTask);
+  scheduler.add_task(pwmPauseTask);
   scheduler.add_task(adcSampleTask);
+  scheduler.add_task(temperatureDisplayTask);
   scheduler.set_idle_callback(idleCallback);
 }
 

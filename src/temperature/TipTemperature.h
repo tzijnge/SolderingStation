@@ -2,14 +2,19 @@
 
 #include <stdint.h>
 
-#include <etl/delegate_observable.h>
-
 // Converts a raw 12-bit ADC sample (0..4095, 0..3.3V - see
 // analogReadResolution(12) in main.cpp) into a whole-degree Celsius tip
-// temperature and notifies observers. Signal chain, worked backwards from
-// the ADC reading to the sensor's own output voltage:
+// temperature. Signal chain, worked backwards from the ADC reading to the
+// sensor's own output voltage:
 //   tip sensor (16uV/*C) -> PCB amplifier (gain 68000/150) -> ADC (12-bit, 3.3V ref)
-class TipTemperature : public etl::delegate_observable<int16_t, 1> {
+//
+// Just stores the latest value - doesn't notify anyone. The (slow, SPI-
+// bound) redraw is decoupled into TipTemperatureDisplayTask, which polls
+// value() on its own schedule instead of onAdcSample() calling into the
+// display inline - onAdcSample() runs as part of the ADC measurement
+// cycle in main.cpp, and that cycle needs to stay fast and predictable
+// (PWM resumes right after it) regardless of how long a redraw takes.
+class TipTemperature {
 public:
   void onAdcSample(uint16_t rawAdc) {
     constexpr float VREF = 3.3f;
@@ -23,17 +28,11 @@ public:
 
     // Rounds to nearest rather than truncating - a soldering iron tip is
     // never cold enough to need to worry about negative values here.
-    int16_t next = static_cast<int16_t>(tempC + 0.5f);
-
-    // Sampled every 100ms, but the rounded value is usually stable for
-    // several samples in a row - only notify (and so only redraw) when it
-    // actually changes, or the display would flicker on every sample.
-    if (next != lastValue) {
-      lastValue = next;
-      notify_observers(next);
-    }
+    value_ = static_cast<int16_t>(tempC + 0.5f);
   }
 
+  int16_t value() const { return value_; }
+
 private:
-  int16_t lastValue = INT16_MIN; // guarantees the first sample always notifies
+  int16_t value_ = 0;
 };
