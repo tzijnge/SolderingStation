@@ -1,8 +1,7 @@
 #pragma once
 
-#include <TFT_eSPI.h>
-#undef round // Arduino.h's round() macro (pulled in via TFT_eSPI.h) breaks ETL's to_string float formatting
-#include "MicroGroteskBold64.h" // single 'C' glyph, see that file for provenance/license
+#include <LovyanGFX.hpp>
+#undef round // Arduino.h's round() macro (pulled in via LovyanGFX.hpp) breaks ETL's to_string float formatting
 #include <etl/string.h>
 #include <etl/to_string.h>
 
@@ -19,15 +18,14 @@ public:
   // own clearing width can never drift out of sync with each other again.
   static constexpr int32_t NUMBER_PADDING = 110;
 
-  TipTemperatureDisplay(TFT_eSPI &tft_, int32_t y_, uint16_t color_) : tft(tft_), y(y_), color(color_) {}
+  TipTemperatureDisplay(LGFX &tft_, int32_t y_, uint16_t color_) : tft(tft_), y(y_), color(color_) {}
 
   // Draws the degree-C suffix once. The degree mark is a small solid ring
   // (filled circle with a smaller filled circle punched out of the
   // middle) rather than a font glyph or thin outline, for a bold, crisp
-  // mark at any size. "C" uses MicroGroteskBold64 (50px cap height at its
-  // native size, no integer-scaling needed) - a single glyph converted
-  // from Micro Grotesk specifically to get close to font 7's 48px digits
-  // without the size mismatch or scaling artifacts of the bundled fonts.
+  // mark at any size. "C" uses LovyanGFX's bundled DejaVu72 (54px cap
+  // height for 'C' - close to font 7's 48px digits without any custom
+  // font generation).
   //
   // Positioned just past NUMBER_PADDING - the same fixed-width clear box
   // main.cpp sets via tft.setTextPadding(TipTemperatureDisplay::NUMBER_PADDING),
@@ -43,9 +41,15 @@ public:
     tft.fillCircle(circleX, circleY, DEGREE_RADIUS, color);
     tft.fillCircle(circleX, circleY, DEGREE_RADIUS - 3, TFT_BLACK);
 
-    tft.setFreeFont(&MicroGroteskBold64);
-    tft.drawString("C", circleX + DEGREE_RADIUS + 6, y);
-    tft.setTextFont(7);
+    tft.setFont(&fonts::DejaVu72);
+    // Bottom-align 'C' with the digits instead of top-aligning: DejaVu72's
+    // TL_DATUM top edge sits 5px below the requested y (font-wide ascent is
+    // 57px, from the backtick glyph, vs 'C's own 52px), so a plain y would
+    // put 'C's top at y+5 and its bottom at y+59. Font 7's digits are a flat
+    // 48px tall starting exactly at y (no TL_DATUM offset), so their bottom
+    // is at y+48. Passing y-11 shifts 'C's bottom (y-11+59 = y+48) to match.
+    tft.drawString("C", circleX + DEGREE_RADIUS + 6, y - 11);
+    tft.setFont(&fonts::Font7);
   }
 
   void onTemperatureChanged(int16_t degreesC) {
@@ -59,7 +63,7 @@ public:
 private:
   static constexpr int32_t DEGREE_RADIUS = 6;
 
-  TFT_eSPI &tft;
+  LGFX &tft;
   int32_t y;
   uint16_t color;
 };

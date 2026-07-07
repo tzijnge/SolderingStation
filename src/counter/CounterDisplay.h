@@ -1,7 +1,7 @@
 #pragma once
 
-#include <TFT_eSPI.h>
-#undef round // Arduino.h's round() macro (pulled in via TFT_eSPI.h) breaks ETL's to_string float formatting
+#include <LovyanGFX.hpp>
+#undef round // Arduino.h's round() macro (pulled in via LovyanGFX.hpp) breaks ETL's to_string float formatting
 #include <etl/string.h>
 #include <etl/to_string.h>
 
@@ -10,7 +10,7 @@
 // with Counter as an etl::delegate observer (see main.cpp).
 class CounterDisplay {
 public:
-  CounterDisplay(TFT_eSPI &tft_, int32_t y_, uint16_t color_) : tft(tft_), y(y_), color(color_) {}
+  CounterDisplay(LGFX &tft_, int32_t y_, uint16_t color_) : tft(tft_), y(y_), color(color_) {}
 
   void onCounterChanged(uint8_t value) {
     etl::string<16> text;
@@ -27,7 +27,7 @@ public:
   }
 
 private:
-  TFT_eSPI &tft;
+  LGFX &tft;
   int32_t y;
   uint16_t color;
 };

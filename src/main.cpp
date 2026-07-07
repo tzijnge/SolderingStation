@@ -1,6 +1,6 @@
 #include <Arduino.h>
+#include <LovyanGFX.hpp>
 #include <Wire.h>
-#include <TFT_eSPI.h>
 #include <SparkFun_Qwiic_Twist_Arduino_Library.h>
 #include <etl/callback_timer_interrupt.h>
 #include <etl/delegate.h>
@@ -18,12 +18,8 @@
 #include "temperature/TipTemperatureDisplay.h"
 #include "temperature/TipTemperatureDisplayTask.h"
 
-TFT_eSPI tft;
+LGFX tft; // LGFX_AUTODETECT (platformio.ini build_flags) configures this for the WIO Terminal's exact ILI9341/SERCOM7/backlight setup automatically
 TWIST twist;
-
-// Seeed_GFX/TFT_eSPI has no enum for its built-in fonts, just numeric IDs
-// (1, 2, 4, 6, 7, 8) documented in the library README.
-constexpr uint8_t SEVEN_SEGMENT_FONT = 7;
 
 // This panel is 320x240 in landscape (setRotation(3)), so three 48px-tall
 // font 7 rows have to fit within a 240px height - evenly spaced 80px apart
@@ -115,11 +111,6 @@ etl::callback_timer_interrupt<4, SysTickGuard> swTimer;
 // settle before the actual sample is taken and PWM resumed.
 etl::timer::id::type measureTimerId; // assigned once in setup()
 
-// Oscilloscope debug signal - see TipTemperatureDisplayTask.h, which
-// currently brackets it around the (slow, SPI-bound) redraw itself, for a
-// baseline measurement of that cost.
-constexpr uint32_t MEASUREMENT_DEBUG_PIN = BCM20;
-
 auto pauseForMeasurement = []() {
   pwmOutput.pause();
   swTimer.start(measureTimerId);
@@ -183,7 +174,10 @@ void setup() {
   Wire.setClock(400000); // fast-mode I2C, keeps polling latency low
 
   tft.begin();
-  tft.setRotation(3);
+  // LovyanGFX's rotation numbering doesn't match Seeed_GFX's for this panel -
+  // its own WIO Terminal autodetect (LGFX_AutoDetect_SAMD51.hpp) calibrates
+  // rotation 1 as this board's correct upright landscape orientation.
+  tft.setRotation(1);
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setTextSize(2);
@@ -227,11 +221,8 @@ void setup() {
   pinMode(BCM21, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BCM21), onEncoderInterrupt, FALLING);
 
-  pinMode(MEASUREMENT_DEBUG_PIN, OUTPUT);
-  digitalWrite(MEASUREMENT_DEBUG_PIN, LOW);
-
   tft.setTextDatum(TL_DATUM);
-  tft.setTextFont(SEVEN_SEGMENT_FONT); // 0-9, ':', '-', '.'
+  tft.setFont(&fonts::Font7); // 0-9, ':', '-', '.'
   tft.setTextSize(1);
   tft.setTextPadding(TipTemperatureDisplay::NUMBER_PADDING); // shared with TipTemperatureDisplay's suffix positioning - see its header
 

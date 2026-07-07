@@ -1,18 +1,10 @@
 #pragma once
 
-#include <Arduino.h>
 #include <etl/task.h>
 
 #include "TipTemperature.h"
 #include "TipTemperatureDisplay.h"
 #include "tasks/TaskPriority.h"
-
-// Oscilloscope debug signal, temporarily bracketing the redraw itself (as
-// opposed to main.cpp's MEASUREMENT_DEBUG_PIN, same physical pin, which
-// has bracketed other spans earlier in this investigation) - gives a
-// baseline measurement of the current (slow, per-pixel SPI) redraw cost
-// to compare against, if a bulk-transfer version is done later.
-constexpr uint32_t REDRAW_DEBUG_PIN = BCM20;
 
 // Polls tipTemperature's value once per scheduler round and redraws only
 // when it's changed since the last draw - the same "only act on real
@@ -34,9 +26,7 @@ public:
 
   void task_process_work() override {
     lastDrawnValue = tipTemperature.value();
-    digitalWrite(REDRAW_DEBUG_PIN, HIGH);
     display.onTemperatureChanged(lastDrawnValue);
-    digitalWrite(REDRAW_DEBUG_PIN, LOW);
   }
 
 private:
