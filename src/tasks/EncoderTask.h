@@ -41,8 +41,8 @@
 // __WFI() wakes promptly on this pin instead of waiting for the next 1ms
 // SysTick tick; its callback doesn't need to do anything itself.
 //
-// EncoderTask knows nothing about Counter (or any other consumer) - it
-// just reports raw hardware events through onDiff_/onReset_, two
+// EncoderTask knows nothing about its consumer (currently TemperatureSetpoint)
+// - it just reports raw hardware events through onDiff_/onPress_, two
 // independently injected delegates. Like all etl::delegate use in this
 // project, these must be named objects with program lifetime (e.g. a
 // bound member-function delegate created in main.cpp), never an inline
@@ -52,14 +52,24 @@ class EncoderTask : public etl::task {
 public:
   EncoderTask(TWIST &twist_, uint32_t intPin_,
               etl::delegate<void(int16_t)> onDiff_,
-              etl::delegate<void(void)> onReset_)
+              etl::delegate<void(void)> onPress_)
       : etl::task(TASK_PRIORITY_INPUT), twist(twist_), intPin(intPin_),
-        onDiff(onDiff_), onReset(onReset_) {}
+        onDiff(onDiff_), onPress(onPress_) {}
 
   void on_task_added() override { lastRawCount = twist.getCount(); }
 
   uint32_t task_request_work() const override {
-    return (digitalRead(intPin) == LOW) ? 1u : 0u;
+    bool active = digitalRead(intPin) == LOW;
+    // The INT line only goes idle once nothing's left to clear, which is
+    // guaranteed to eventually happen after a real release, however many
+    // re-asserted reads it took to get there (see task_process_work()) -
+    // tying the "ready to fire onPress again" reset to that objective,
+    // hardware-level idle state is more robust than trying to catch a
+    // clean isPressed()==false read directly.
+    if (!active) {
+      pressHandled = false;
+    }
+    return active ? 1u : 0u;
   }
 
   void task_process_work() override {
@@ -71,11 +81,20 @@ public:
     // write, that write overwrites the whole byte with the stale
     // snapshot, silently erasing the new event. isClicked() (latched once
     // on button release) only gets one narrow window to be caught, so it
-    // occasionally lost the race. isPressed() is checked instead - reset
-    // now happens on press (matching the WIO Terminal's own middle
-    // button) and, since task_process_work() runs repeatedly for as long
-    // as the INT line stays low during a hold, we get many chances to
-    // observe it true rather than depending on one race-prone latch.
+    // occasionally lost the race. isPressed() is checked instead - and,
+    // since task_process_work() runs repeatedly for as long as the INT
+    // line stays low during a hold, we get many chances to observe it
+    // true rather than depending on one race-prone latch.
+    //
+    // But that same repeated-true behaviour means isPressed() reports
+    // true on every single read for the whole duration of a physical
+    // hold, not just once (the Twist's firmware keeps re-asserting it
+    // while held - see the INT-line comment above task_request_work()).
+    // Calling onPress() on every one of those reads was harmless for the
+    // old Counter::reset() it used to be bound to (idempotent - resetting
+    // an already-zero counter repeatedly is a no-op), but is not harmless
+    // for TemperatureSetpoint::toggle() (each call flips on/off), so it's
+    // now gated on pressHandled to fire exactly once per hold.
     twist.isMoved();
     int16_t rawCount = twist.getCount();
     // This board reports clockwise rotation as positive; negate here if
@@ -89,9 +108,12 @@ public:
     // A press takes precedence over any rotation reported in the same
     // call (matching the WIO Terminal's own middle button), so a
     // rotate-while-holding never fires a diff that the receiving end
-    // would immediately have to overwrite with the reset.
+    // would immediately have to overwrite with the press handler.
     if (pressed) {
-      onReset();
+      if (!pressHandled) {
+        pressHandled = true;
+        onPress();
+      }
     } else if (delta != 0) {
       onDiff(delta);
     }
@@ -101,6 +123,7 @@ private:
   TWIST &twist;
   uint32_t intPin;
   etl::delegate<void(int16_t)> onDiff;
-  etl::delegate<void(void)> onReset;
+  etl::delegate<void(void)> onPress;
   int16_t lastRawCount = 0;
+  mutable bool pressHandled = false; // reset from task_request_work(), see there
 };

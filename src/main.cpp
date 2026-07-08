@@ -8,65 +8,63 @@
 #include <etl/scheduler.h>
 
 #include "adc/AdcInput.h"
-#include "counter/Counter.h"
-#include "counter/CounterDisplay.h"
-#include "counter/CounterDisplayTask.h"
 #include "counter/CounterPwmOutput.h"
 #include "tasks/EncoderTask.h"
 #include "tasks/NotifyTask.h"
+#include "temperature/SetpointDisplayTask.h"
+#include "temperature/TemperatureController.h"
+#include "temperature/TemperatureDisplay.h"
+#include "temperature/TemperatureSetpoint.h"
 #include "temperature/TipTemperature.h"
-#include "temperature/TipTemperatureDisplay.h"
 #include "temperature/TipTemperatureDisplayTask.h"
 
 LGFX tft; // LGFX_AUTODETECT (platformio.ini build_flags) configures this for the WIO Terminal's exact ILI9341/SERCOM7/backlight setup automatically
 TWIST twist;
 
-// This panel is 320x240 in landscape (setRotation(3)), so three 48px-tall
-// font 7 rows have to fit within a 240px height - evenly spaced 80px apart
-// (20, 100, 180) leaves a comfortable margin above/below/between all three.
-CounterDisplay display(tft, 20, TFT_GREEN); // button/encoder controlled
+// This panel is 320x240 in landscape (setRotation(1)). Each row's visual
+// bounding box is 54px tall - not the raw 48px font 7 digit height, since
+// the degree-C suffix's 'C' is bottom-aligned with the digits (see
+// TemperatureDisplay::begin()) and sticks up 6px above the digit top.
+// Centering two such rows with equal top margin/gap/bottom margin across
+// the 240px height solves 3*M + 2*54 = 240, giving M = 44: margin 44, row
+// top at y=50 (44+6, since the row's own visual top is y-6), row bottom at
+// 98, another 44px gap, second row top at y=148, bottom at 196, then a
+// final 44px margin to the bottom edge.
+TemperatureDisplay setpointDisplay(tft, 50, TFT_GREEN); // button/encoder controlled
 CounterPwmOutput pwmOutput(BCM23);
 
-// The only place the counter's value and its 0..255 clamp live. Neither
-// producer below knows this type exists beyond what's bound into their
-// delegates. pwmOutput observes it directly (see counter.add_observer()
-// in setup()); counterDisplayTask polls it instead (see below).
-Counter counter;
+// The only place the setpoint's value, its 50..450 clamp, and the station's
+// on/off state live. Neither producer below knows this type exists beyond
+// what's bound into their delegates. Not driven by PWM directly (contrast
+// with the old Counter this replaces) - temperatureController polls it
+// once per ADC measurement cycle instead (see measureAndResume below);
+// setpointDisplayTask polls it for the redraw (see below).
+TemperatureSetpoint setpoint;
 
-// onDiff/onReset bind directly to Counter's own methods - no wrapper
-// needed since the delegate signatures already match exactly. EncoderTask
-// itself never sees the Counter type.
+// onDiff/onPress bind directly to TemperatureSetpoint's own methods - no
+// wrapper needed since the delegate signatures already match exactly.
+// EncoderTask itself never sees the TemperatureSetpoint type.
 EncoderTask encoderTask(twist, BCM21,
-                        etl::delegate<void(int16_t)>::create<Counter, &Counter::diff>(counter),
-                        etl::delegate<void(void)>::create<Counter, &Counter::reset>(counter));
+                        etl::delegate<void(int16_t)>::create<TemperatureSetpoint, &TemperatureSetpoint::diffSteps>(setpoint),
+                        etl::delegate<void(void)>::create<TemperatureSetpoint, &TemperatureSetpoint::toggle>(setpoint));
 
-// Each button needs a fixed argument (+-1) or no argument at all baked in,
-// which a plain bound-member delegate can't express, hence these small
-// lambdas rather than binding straight to Counter::diff/reset. Like all
-// etl::delegate use in this project, they must be named objects with
-// program lifetime, never inline lambda literals (see NotifyTask for why).
-auto decrementCounter = []() { counter.diff(-1); };
-auto resetCounter = []() { counter.reset(); };
-auto incrementCounter = []() { counter.diff(1); };
-NotifyTask leftButtonTask(decrementCounter);
-NotifyTask middleButtonTask(resetCounter);
-NotifyTask rightButtonTask(incrementCounter);
+// Each button needs a fixed argument (+-1 step) or no argument at all baked
+// in, which a plain bound-member delegate can't express, hence these small
+// lambdas rather than binding straight to TemperatureSetpoint::diffSteps/
+// toggle. Like all etl::delegate use in this project, they must be named
+// objects with program lifetime, never inline lambda literals (see
+// NotifyTask for why).
+auto decrementSetpoint = []() { setpoint.diffSteps(-1); };
+auto toggleSetpoint = []() { setpoint.toggle(); };
+auto incrementSetpoint = []() { setpoint.diffSteps(1); };
+NotifyTask leftButtonTask(decrementSetpoint);
+NotifyTask middleButtonTask(toggleSetpoint);
+NotifyTask rightButtonTask(incrementSetpoint);
 
-// Polls counter rather than observing it - see CounterDisplayTask and
-// Counter's own comments for why the redraw is decoupled from whichever
-// task (a button or the encoder) just changed the value.
-CounterDisplayTask counterDisplayTask(counter, display);
-
-// A second, independent counter driven by 1-second and 30-second software
-// timers instead of hardware input, just to prove the timer plumbing out -
-// see swTimer/sysTickHook() below for how they actually tick.
-CounterDisplay secondsDisplay(tft, 100, TFT_YELLOW); // timer controlled
-Counter secondsCounter;
-auto incrementSeconds = []() { secondsCounter.diff(1); };
-auto resetSeconds = []() { secondsCounter.reset(); };
-NotifyTask secondsTask(incrementSeconds);
-NotifyTask resetSecondsTask(resetSeconds);
-CounterDisplayTask secondsDisplayTask(secondsCounter, secondsDisplay);
+// Polls setpoint rather than observing it - see SetpointDisplayTask and
+// TemperatureSetpoint's own comments for why the redraw is decoupled from
+// whichever task (a button or the encoder) just changed the value.
+SetpointDisplayTask setpointDisplayTask(setpoint, setpointDisplay);
 
 // Raw 12-bit ADC reading (0..4095, VDDANA/3.3V reference - both are this
 // board's defaults) on A3/BCM24/40-pin header pin 18, sampled once per
@@ -74,9 +72,9 @@ CounterDisplayTask secondsDisplayTask(secondsCounter, secondsDisplay);
 // paused around each sample to keep its switching noise out of the
 // reading), converted by tipTemperature into a whole-degree Celsius tip
 // temperature (see temperature/TipTemperature.h for the sensor/amplifier/
-// ADC math). Not built on Counter - neither a raw ADC sample nor a
-// temperature reading has diff/reset/clamp semantics, so that abstraction
-// doesn't fit here.
+// ADC math). Not built on a Counter/Setpoint-style class - neither a raw
+// ADC sample nor a temperature reading has diff/toggle/clamp semantics, so
+// that abstraction doesn't fit here.
 //
 // temperatureDisplayTask (declared after swTimer below, alongside the
 // other tasks) polls tipTemperature and redraws on its own turn in the
@@ -84,9 +82,20 @@ CounterDisplayTask secondsDisplayTask(secondsCounter, secondsDisplay);
 // that redraw is a slow (~17ms, see project notes) SPI write and
 // measureAndResume() needs pwmOutput.resume() to run right after
 // sampling, not after whatever a redraw happens to cost that cycle.
-TipTemperatureDisplay temperatureDisplay(tft, 180, TFT_MAGENTA);
+TemperatureDisplay temperatureDisplay(tft, 148, TFT_MAGENTA);
 TipTemperature tipTemperature;
 AdcInput adcInput(A3);
+
+// Turns (setpoint, tipTemperature) into a PWM duty each measurement cycle
+// (see measureAndResume below) via br3ttb/Arduino-PID-Library - see
+// TemperatureController.h for the on/off handling and why compute()'s
+// 100ms cadence matters. Kp/Ki/Kd are placeholders: this project has no
+// characterized plant model (heater wattage, thermal mass, sensor lag), so
+// these need on-device tuning. Start with pure P (Ki=Kd=0), observe the
+// steady-state behaviour, then add Ki to remove any steady-state error, and
+// only add Kd afterward if overshoot still needs taming - standard manual
+// PID tuning order, since there's no autotune wired up here.
+TemperatureController temperatureController(setpoint, /*Kp*/ 5.0, /*Ki*/ 0.0, /*Kd*/ 0.0);
 
 // Guards register_timer()/start()/stop() (called from setup(), i.e. normal
 // code) against a concurrent SysTick interrupt calling tick() mid-update -
@@ -96,13 +105,11 @@ struct SysTickGuard {
   ~SysTickGuard() { NVIC_EnableIRQ(SysTick_IRQn); }
 };
 
-// A 1-second repeating counter tick, a 30-second repeating counter reset,
-// a 100ms repeating PWM-pause, and a 5ms one-shot ADC measurement (see
-// pauseForMeasurement/measureAndResume below) - all unrelated to each
-// other, this is just where this project's software timers live. tick()
-// is called with a 1ms count from sysTickHook() below, so periods
-// registered on this are in milliseconds.
-etl::callback_timer_interrupt<4, SysTickGuard> swTimer;
+// A 100ms repeating PWM-pause and a 5ms one-shot ADC measurement (see
+// pauseForMeasurement/measureAndResume below) - this is just where this
+// project's software timers live. tick() is called with a 1ms count from
+// sysTickHook() below, so periods registered on this are in milliseconds.
+etl::callback_timer_interrupt<2, SysTickGuard> swTimer;
 
 // pwmOutput switching is a noise source for the ADC reading, so each
 // measurement cycle pauses it first: a 100ms repeating timer pauses PWM
@@ -117,6 +124,11 @@ auto pauseForMeasurement = []() {
 };
 auto measureAndResume = []() {
   adcInput.sample();
+  uint8_t duty = temperatureController.compute(tipTemperature.value());
+  // Still paused here - onCounterChanged() only updates lastValue without
+  // writing to the pin (see CounterPwmOutput::pause()), so the new duty
+  // takes effect exactly when resume() un-pauses it below.
+  pwmOutput.onCounterChanged(duty);
   pwmOutput.resume();
 };
 NotifyTask pwmPauseTask(pauseForMeasurement);
@@ -126,11 +138,11 @@ TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisp
 // "Single" (not "multiple"): processes at most one unit of work per task
 // per round before moving to the next, so a task whose task_request_work()
 // stays true for an extended period (e.g. EncoderTask while the Twist's
-// button is held) can't starve the tasks after it in the list. counter,
-// display and pwmOutput aren't scheduler tasks at all - each update
-// happens synchronously, inline, as part of the producing task's
+// button is held) can't starve the tasks after it in the list. setpoint,
+// temperatureController and pwmOutput aren't scheduler tasks at all - each
+// update happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 11> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 8> scheduler;
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
@@ -221,27 +233,21 @@ void setup() {
   pinMode(BCM21, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BCM21), onEncoderInterrupt, FALLING);
 
-  tft.setTextDatum(TL_DATUM);
+  // Text datum is set explicitly by TemperatureDisplay itself on every draw
+  // (TR_DATUM for the number, TL_DATUM for the degree-C suffix), not relied
+  // on as ambient state here.
   tft.setFont(&fonts::Font7); // 0-9, ':', '-', '.'
   tft.setTextSize(1);
-  tft.setTextPadding(TipTemperatureDisplay::NUMBER_PADDING); // shared with TipTemperatureDisplay's suffix positioning - see its header
+  tft.setTextPadding(TemperatureDisplay::NUMBER_PADDING); // shared with TemperatureDisplay's suffix positioning - see its header
 
   pwmOutput.begin();
-  counter.add_observer(etl::delegate<void(uint8_t)>::create<CounterPwmOutput, &CounterPwmOutput::onCounterChanged>(pwmOutput));
-  counter.begin(); // seed initial PWM state (counterDisplayTask seeds the display itself, on its first poll)
+  pwmOutput.onCounterChanged(0); // defined-off PWM state from boot, matching setpoint/temperatureController's initial off state
+  setpointDisplay.begin(); // draws the static degree-C suffix once
 
   analogReadResolution(12); // 0..4095 instead of the default 10-bit 0..1023
   temperatureDisplay.begin(); // draws the static degree-C suffix once
   adcInput.add_observer(etl::delegate<void(uint16_t)>::create<TipTemperature, &TipTemperature::onAdcSample>(tipTemperature));
   adcInput.sample(); // seeds tipTemperature; temperatureDisplayTask's first poll draws the initial number
-
-  etl::timer::id::type secondsTimerId = swTimer.register_timer(
-      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(secondsTask), 1000U, true);
-  swTimer.start(secondsTimerId);
-
-  etl::timer::id::type resetSecondsTimerId = swTimer.register_timer(
-      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(resetSecondsTask), 30000U, true);
-  swTimer.start(resetSecondsTimerId);
 
   // Registered but not started - only re-started by pauseForMeasurement,
   // repeating=false so it fires exactly once per arm.
@@ -258,10 +264,7 @@ void setup() {
   scheduler.add_task(leftButtonTask);
   scheduler.add_task(middleButtonTask);
   scheduler.add_task(rightButtonTask);
-  scheduler.add_task(counterDisplayTask);
-  scheduler.add_task(secondsTask);
-  scheduler.add_task(resetSecondsTask);
-  scheduler.add_task(secondsDisplayTask);
+  scheduler.add_task(setpointDisplayTask);
   scheduler.add_task(pwmPauseTask);
   scheduler.add_task(adcSampleTask);
   scheduler.add_task(temperatureDisplayTask);

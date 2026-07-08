@@ -2,8 +2,8 @@
 
 #include <etl/task.h>
 
+#include "TemperatureDisplay.h"
 #include "TipTemperature.h"
-#include "TipTemperatureDisplay.h"
 #include "tasks/TaskPriority.h"
 
 // Polls tipTemperature's value once per scheduler round and redraws only
@@ -17,7 +17,7 @@
 // PWM output right after sampling regardless of how long a redraw takes.
 class TipTemperatureDisplayTask : public etl::task {
 public:
-  TipTemperatureDisplayTask(TipTemperature &tipTemperature_, TipTemperatureDisplay &display_)
+  TipTemperatureDisplayTask(TipTemperature &tipTemperature_, TemperatureDisplay &display_)
       : etl::task(TASK_PRIORITY_DISPLAY), tipTemperature(tipTemperature_), display(display_) {}
 
   uint32_t task_request_work() const override {
@@ -31,6 +31,6 @@ public:
 
 private:
   TipTemperature &tipTemperature;
-  TipTemperatureDisplay &display;
+  TemperatureDisplay &display;
   int16_t lastDrawnValue = INT16_MIN; // guarantees the first round always draws
 };
