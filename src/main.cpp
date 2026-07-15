@@ -95,7 +95,7 @@ AdcInput adcInput(A3);
 // steady-state behaviour, then add Ki to remove any steady-state error, and
 // only add Kd afterward if overshoot still needs taming - standard manual
 // PID tuning order, since there's no autotune wired up here.
-TemperatureController temperatureController(setpoint, /*Kp*/ 5.0, /*Ki*/ 0.0, /*Kd*/ 0.0);
+TemperatureController temperatureController(setpoint, /*Kp*/ 20.0, /*Ki*/ 2.0, /*Kd*/ 0.0);
 
 // Guards register_timer()/start()/stop() (called from setup(), i.e. normal
 // code) against a concurrent SysTick interrupt calling tick() mid-update -
@@ -105,11 +105,12 @@ struct SysTickGuard {
   ~SysTickGuard() { NVIC_EnableIRQ(SysTick_IRQn); }
 };
 
-// A 100ms repeating PWM-pause and a 5ms one-shot ADC measurement (see
-// pauseForMeasurement/measureAndResume below) - this is just where this
-// project's software timers live. tick() is called with a 1ms count from
-// sysTickHook() below, so periods registered on this are in milliseconds.
-etl::callback_timer_interrupt<2, SysTickGuard> swTimer;
+// A 100ms repeating PWM-pause, a 5ms one-shot ADC measurement, and a 100ms
+// repeating telemetry print (see pauseForMeasurement/measureAndResume/
+// printTelemetry below) - this is just where this project's software
+// timers live. tick() is called with a 1ms count from sysTickHook() below,
+// so periods registered on this are in milliseconds.
+etl::callback_timer_interrupt<3, SysTickGuard> swTimer;
 
 // pwmOutput switching is a noise source for the ADC reading, so each
 // measurement cycle pauses it first: a 100ms repeating timer pauses PWM
@@ -118,21 +119,78 @@ etl::callback_timer_interrupt<2, SysTickGuard> swTimer;
 // settle before the actual sample is taken and PWM resumed.
 etl::timer::id::type measureTimerId; // assigned once in setup()
 
+// TEMPORARY: 2-second moving average of the measured temperature, for the
+// Teleplot tuning plot (see printTelemetry() below) - smooths out sensor
+// noise so the underlying trend is easier to read. printTelemetry() runs
+// every 100ms, so 2000/100 = 20 samples. movingAvgCount ramps up from 0 to
+// MOVING_AVG_SAMPLES so the average isn't biased low by not-yet-written
+// zeros in the buffer during the first 2 seconds after boot.
+constexpr size_t MOVING_AVG_SAMPLES = 20;
+float movingAvgBuffer[MOVING_AVG_SAMPLES] = {};
+size_t movingAvgIndex = 0;
+size_t movingAvgCount = 0;
+float movingAvgSum = 0.0f;
+
+// TEMPORARY: last duty computed by measureAndResume(), cached purely so
+// printTelemetry() (a separate task - see below) can report it without
+// touching the timing-critical measurement cycle itself.
+uint8_t lastDuty = 0;
+
 auto pauseForMeasurement = []() {
   pwmOutput.pause();
   swTimer.start(measureTimerId);
 };
 auto measureAndResume = []() {
   adcInput.sample();
-  uint8_t duty = temperatureController.compute(tipTemperature.value());
+  uint8_t duty = temperatureController.compute(tipTemperature.filteredValue());
+  lastDuty = duty;
   // Still paused here - onCounterChanged() only updates lastValue without
   // writing to the pin (see CounterPwmOutput::pause()), so the new duty
   // takes effect exactly when resume() un-pauses it below.
   pwmOutput.onCounterChanged(duty);
   pwmOutput.resume();
 };
+
+// TEMPORARY: PID-tuning telemetry, in Teleplot's >name:value format
+// (https://teleplot.fr/) - install the "teleplot" VS Code extension, point
+// it at this board's serial port, and it plots setpoint/measured/
+// measuredAvg/duty live. One line per variable rather than combining them
+// with commas - more reliably parsed.
+//
+// Deliberately a separate task from measureAndResume(), on its own 100ms
+// timer, rather than printing inline there - Serial.print() can block
+// (e.g. if the USB CDC buffer fills because nothing's draining it fast
+// enough), and measureAndResume() needs pwmOutput.resume() to run
+// promptly and predictably every cycle, same reasoning as why display
+// redraws are decoupled from it (see TipTemperatureDisplayTask). A stalled
+// print here can no longer delay that at all, or desynchronize the pause/
+// resume timing against the 5ms measurement window.
+//
+// Remove this whole task (and lastDuty/movingAvg* above) once tuning is
+// done.
+auto printTelemetry = []() {
+  if (movingAvgCount < MOVING_AVG_SAMPLES) {
+    movingAvgCount++;
+  } else {
+    movingAvgSum -= movingAvgBuffer[movingAvgIndex];
+  }
+  movingAvgBuffer[movingAvgIndex] = tipTemperature.value();
+  movingAvgSum += movingAvgBuffer[movingAvgIndex];
+  movingAvgIndex = (movingAvgIndex + 1) % MOVING_AVG_SAMPLES;
+
+  // 0 while off (setpoint.value() itself still holds the real value
+  // internally, for resume - this only affects what's plotted), so the
+  // plot clearly shows "no active setpoint" at startup and on every
+  // off-toggle instead of a misleading stale/preserved number.
+  Serial.print(">setpoint:"); Serial.println(setpoint.isOn() ? setpoint.value() : 0);
+  Serial.print(">measured:"); Serial.println(tipTemperature.value());
+  Serial.print(">measuredFiltered:"); Serial.println(tipTemperature.filteredValue());
+  Serial.print(">measuredAvg:"); Serial.println(movingAvgSum / movingAvgCount);
+  Serial.print(">duty:"); Serial.println(lastDuty);
+};
 NotifyTask pwmPauseTask(pauseForMeasurement);
 NotifyTask adcSampleTask(measureAndResume);
+NotifyTask telemetryTask(printTelemetry);
 TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisplay);
 
 // "Single" (not "multiple"): processes at most one unit of work per task
@@ -142,7 +200,7 @@ TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisp
 // temperatureController and pwmOutput aren't scheduler tasks at all - each
 // update happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 8> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 9> scheduler;
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
@@ -182,6 +240,8 @@ extern "C" int sysTickHook(void) {
 }
 
 void setup() {
+  Serial.begin(115200); // for the Teleplot telemetry in printTelemetry() - see there
+
   Wire.begin();
   Wire.setClock(400000); // fast-mode I2C, keeps polling latency low
 
@@ -258,6 +318,12 @@ void setup() {
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(pwmPauseTask), 100U, true);
   swTimer.start(pwmPauseTimerId);
 
+  // TEMPORARY: drives printTelemetry() - see its own comment for why this
+  // is a separate task/timer rather than being inline in measureAndResume().
+  etl::timer::id::type telemetryTimerId = swTimer.register_timer(
+      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(telemetryTask), 100U, true);
+  swTimer.start(telemetryTimerId);
+
   swTimer.enable(true);
 
   scheduler.add_task(encoderTask);
@@ -267,6 +333,7 @@ void setup() {
   scheduler.add_task(setpointDisplayTask);
   scheduler.add_task(pwmPauseTask);
   scheduler.add_task(adcSampleTask);
+  scheduler.add_task(telemetryTask);
   scheduler.add_task(temperatureDisplayTask);
   scheduler.set_idle_callback(idleCallback);
 }

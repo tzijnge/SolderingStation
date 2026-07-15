@@ -31,7 +31,7 @@ public:
     pid.SetMode(MANUAL); // starts off, matching TemperatureSetpoint's initial state
   }
 
-  uint8_t compute(int16_t measuredTempC) {
+  uint8_t compute(float measuredTempC) {
     if (!setpoint.isOn()) {
       output = 0;
       pid.SetMode(MANUAL);

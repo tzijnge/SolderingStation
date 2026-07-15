@@ -21,11 +21,11 @@ public:
       : etl::task(TASK_PRIORITY_DISPLAY), tipTemperature(tipTemperature_), display(display_) {}
 
   uint32_t task_request_work() const override {
-    return (tipTemperature.value() != lastDrawnValue) ? 1u : 0u;
+    return (tipTemperature.wholeDegrees() != lastDrawnValue) ? 1u : 0u;
   }
 
   void task_process_work() override {
-    lastDrawnValue = tipTemperature.value();
+    lastDrawnValue = tipTemperature.wholeDegrees();
     display.onTemperatureChanged(lastDrawnValue);
   }
 
