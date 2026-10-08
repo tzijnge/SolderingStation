@@ -10,7 +10,7 @@
 //
 // Just stores the latest value - doesn't notify anyone. The (slow, SPI-
 // bound) redraw is decoupled into TipTemperatureDisplayTask, which polls
-// wholeDegrees() on its own schedule instead of onAdcSample() calling into
+// filteredValue() on its own schedule instead of onAdcSample() calling into
 // the display inline - onAdcSample() runs as part of the ADC measurement
 // cycle in main.cpp, and that cycle needs to stay fast and predictable
 // (PWM resumes right after it) regardless of how long a redraw takes.
@@ -37,19 +37,16 @@ public:
     filtered_ = filtered_ + FILTER_ALPHA * (value_ - filtered_);
   }
 
-  // Full precision, unfiltered - kept for display/telemetry (e.g. the
-  // Teleplot "measured" trace) where seeing the raw signal matters more
-  // than smoothness.
+  // Full precision, unfiltered - kept for telemetry (the Teleplot
+  // "measured" trace), where seeing the raw signal matters more than
+  // smoothness.
   float value() const { return value_; }
 
   // Filtered - for the PID controller (TemperatureController), so sensor
   // noise doesn't directly translate into duty-cycle jitter via the P term.
+  // Also what the display shows (TipTemperatureDisplayTask, which adds its
+  // own hysteresis on top).
   float filteredValue() const { return filtered_; }
-
-  // Rounded to nearest rather than truncated - a soldering iron tip is
-  // never cold enough to need to worry about negative values here. For
-  // display only (TipTemperatureDisplayTask) - font 7 shows whole degrees.
-  int16_t wholeDegrees() const { return static_cast<int16_t>(value_ + 0.5f); }
 
 private:
   static constexpr float FILTER_ALPHA = 0.3f;

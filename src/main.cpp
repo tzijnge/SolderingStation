@@ -91,11 +91,16 @@ AdcInput adcInput(A3);
 // TemperatureController.h for the on/off handling and why compute()'s
 // 100ms cadence matters. Kp/Ki/Kd are placeholders: this project has no
 // characterized plant model (heater wattage, thermal mass, sensor lag), so
-// these need on-device tuning. Start with pure P (Ki=Kd=0), observe the
-// steady-state behaviour, then add Ki to remove any steady-state error, and
-// only add Kd afterward if overshoot still needs taming - standard manual
-// PID tuning order, since there's no autotune wired up here.
-TemperatureController temperatureController(setpoint, /*Kp*/ 20.0, /*Ki*/ 2.0, /*Kd*/ 0.0);
+// these need on-device tuning. Full power heats the tip at ~70-75 degrees/s
+// (measured: 50 -> 350 in under 5s), i.e. ~7 degrees per 100ms sample, so overshoot is dominated by lag (the
+// EMA filter in TipTemperature, heat still flowing into the sensor) - a
+// small Kd (~1, acting on the measurement's rate of change) is the next
+// knob if overshoot needs taming. Kp was lowered from 20 to 10 after
+// FILTER_ALPHA went 0.3 -> 0.5: with less filter lag, Kp=20 gave a fast,
+// near 0<->255 duty oscillation around the setpoint for a few seconds -
+// too much gain for the remaining heater-to-sensor lag. If that persists,
+// lower Kd next (it sees more noise with the lighter filter).
+TemperatureController temperatureController(setpoint, /*Kp*/ 10.0, /*Ki*/ 2.0, /*Kd*/ 0.5);
 
 // Guards register_timer()/start()/stop() (called from setup(), i.e. normal
 // code) against a concurrent SysTick interrupt calling tick() mid-update -
@@ -336,6 +341,17 @@ void setup() {
   scheduler.add_task(telemetryTask);
   scheduler.add_task(temperatureDisplayTask);
   scheduler.set_idle_callback(idleCallback);
+
+  // Short startup beep, last in setup() so it also signals that init
+  // succeeded (e.g. the Twist was found). Deliberately NOT tone(): the Seeed
+  // core's tone() runs on TC0, which LovyanGFX's WIO Terminal autodetect
+  // already uses for the LCD backlight PWM (Light_WioTerminal) - tone()
+  // resets TC0 and disables it when done, turning the backlight off.
+  // analogWrite() on WIO_BUZZER uses TCC0 (CH4) instead, which nothing else
+  // here touches. Blocking, but it's a one-off 100ms at boot.
+  analogWrite(WIO_BUZZER, 128);
+  delay(100);
+  analogWrite(WIO_BUZZER, 0);
 }
 
 void loop() {
