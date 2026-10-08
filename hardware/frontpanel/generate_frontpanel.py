@@ -28,7 +28,7 @@ SHEET_X, SHEET_Y = 20.0, 40.0
 
 # --- Panel -------------------------------------------------------------------
 PANEL_W, PANEL_H = 253.0, 60.0
-PANEL_THICKNESS = 2.0
+PANEL_THICKNESS = 1.0         # two identical boards are stacked to fill the 2.2 mm slots
 SLOT_DEPTH = 2.0            # hidden in the enclosure slots, all four edges assumed
 COPPER_EDGE_CLEARANCE = 1.5 # keeps logic GND away from the (PE-earthed) enclosure
 CY = PANEL_H / 2            # common vertical centre line
@@ -131,7 +131,7 @@ KNOB_D = 16.0                 # ~ no knob chosen yet
 XLR_FLANGE = (26.0, 26.0)     # ~ square flange around the diagonal M3 holes
 CREDITS = ["github.com/tzijnge/SolderingStation", "Timon Zijnge 2026"]
 REPO_URL = "https://github.com/tzijnge/SolderingStation"
-QR_SIZE, QR_MARGIN = 16.0, 1.5  # QR code on the back, plus its white quiet zone
+QR_SIZE, QR_MARGIN = 20.0, 1.5  # QR code on the back, plus its white quiet zone
 
 # WIO 40-pin header: BCM number or power rail per physical pin, from Seeed's
 # WIO Terminal schematic (v1.2, header J6) - same as a Raspberry Pi. Note: the

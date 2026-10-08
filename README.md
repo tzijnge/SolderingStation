@@ -97,7 +97,8 @@ Things to watch out for:
 - The WIO's 40-pin header follows the Raspberry Pi pinout exactly. The pin table in the board's `variant.h` wrongly shows pin 17 as GND; it's 3.3V.
 - The Twist's encoder is on its bottom side, so seen from the front its pin row is mirrored relative to SparkFun's drawings.
 - The copper pours stay clear of the board edge and of the XLR and mains switch, so logic GND can't touch the earthed enclosure, the XLR chassis or mains.
-- Order at the thickness in `PANEL_THICKNESS` (2.0 mm here, to fit the slots) and have the fab leave its order number off the front.
+- The panel must fill the enclosure's slots (2.2 mm here). A 2.0 mm board costs about four times as much as a 1.0 or 1.6 mm one, so here two identical 1.0 mm boards are stacked (`PANEL_THICKNESS` = 1.0): the back one carries the parts, the front one only shows its front side, and the parts' screws clamp them together. The 40-pin header then goes through both boards — use one with pins long enough to solder on the back of the back board.
+- Have the fab leave its order number off the board (at JLCPCB: "Mark on PCB: Remove Mark", same price).
 
 ## Telemetry / PID tuning
 

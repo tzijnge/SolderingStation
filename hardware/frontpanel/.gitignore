@@ -5,3 +5,7 @@
 fp-info-cache
 ~*.lck
 *.bak
+
+# Manufacturing output (Gerbers, drill files), regenerated from the board
+gerbers/
+gerbers.zip
