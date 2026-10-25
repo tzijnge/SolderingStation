@@ -63,5 +63,5 @@ Write the message to a file in the scratchpad, append a blank line and the `Co-A
 ## 8. Finish
 
 - `git status --short` must be clean (or only show what the user chose to leave out), and `git log --oneline main..HEAD` lists the new commits.
-- Never push unless the user asks. The user opens the PR on GitHub's PR page and closes the issue from there - so no closing keywords (`Closes #n`) in commits.
+- Never push unless the user asks. The PR (created by `/finish-issue`) closes the issue - so no closing keywords (`Closes #n`) in commits.
 - Report the commits (hash, subject, topic) and anything not verified, e.g. intermediate commits not built on their own.

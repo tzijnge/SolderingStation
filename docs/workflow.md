@@ -7,7 +7,7 @@ How work on this project goes from a GitHub issue to `main`. Each phase has a Cl
 | Start | `/start-issue <n>` | Branch from an up-to-date `main`, issue to *In Progress* on the board, short plan for approval |
 | Work | (normal conversation) | Implement, you build and test on the device |
 | Commit | `/commit-issue <n>` | Checks, topic commits with messages from the `commit-message` agent |
-| Finish | `/finish-issue <n>` | Confirm hardware tests, push, draft the PR for you to create; after the merge: clean up |
+| Finish | `/finish-issue <n>` | Confirm hardware tests, push, create a draft PR; after you've merged it: clean up |
 
 An issue normally gets several commits, and work on an issue can go back and forth between *Work* and *Commit* several times before it's finished.
 
@@ -37,7 +37,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 ### Pull requests
 
 - Merged with **Squash and merge**: `main` gets one commit per issue, and its message is the PR's title and description. The topic commits stay visible in the closed PR.
-- So the PR title and description *are* the final commit message, with the same structure as the topic commits. The `commit-message` agent writes it as a "squash message", Claude checks it, and you create the PR on GitHub's PR page:
+- So the PR title and description *are* the final commit message, with the same structure as the topic commits. The `commit-message` agent writes it as a "squash message", Claude checks it and creates the PR as a GitHub **draft PR**. You review it, mark it *Ready for review* and merge it with *Squash and merge*:
   - Title: `#<n> <issue title>` (no topic: it covers the whole issue).
   - Description: the bullets of the issue's topic commits with the irrelevant ones removed, then `Closes #<n>`:
 
