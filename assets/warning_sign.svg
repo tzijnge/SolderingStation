@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Warning sign for the Fault screen (src/safety/FaultScreen.h).
+  Source of src/images/WarningSign.h - after editing, regenerate with:
+    python tools/svg_to_bitmap.py assets/warning_sign.svg src/images/WarningSign.h WarningSign
+
+  Drawn 1:1 in screen pixels (104 x 94). Rounded corners come from stroking
+  an equilateral "core" triangle with round joins: the red stroke is twice the
+  corner radius (16 px) wide, the white one twice (radius - border) = twice
+  6 px, leaving an even 10 px red border all round. The canvas is rendered on
+  black, the Fault screen's background, so the anti-aliased edges blend into
+  it.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="104" height="94" viewBox="0 0 104 94">
+  <!-- Core triangle: apex (52,16), base y=78, side 71.6 (height 62). -->
+  <polygon points="52,16 16.2,78 87.8,78" fill="#ff0000" stroke="#ff0000" stroke-width="32" stroke-linejoin="round"/>
+  <polygon points="52,16 16.2,78 87.8,78" fill="#ffffff" stroke="#ffffff" stroke-width="12" stroke-linejoin="round"/>
+  <!-- Exclamation mark: bar and dot. -->
+  <rect x="47" y="28" width="10" height="31" rx="5" fill="#000000"/>
+  <circle cx="52" cy="70.5" r="6" fill="#000000"/>
+</svg>

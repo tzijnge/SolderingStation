@@ -35,6 +35,41 @@ Build and upload using the PlatformIO sidebar in VS Code (project/build/upload i
 - `Arduino.h` (with the WIO Terminal's `variant.h` it pulls in) `#define`s names that break standard library and ETL headers parsed after it: the function-like macros `min`, `max`, `abs` and `round`, and pin names such as `D1` and `D2`, which ETL uses as template parameter names. The fix is to include the affected headers *before* `Arduino.h`: their include guards then keep them from being parsed again once the macros exist. That's the include block at the very top of `src/main.cpp`. If a newly used `<...>` or `etl/...` header fails with odd errors pointing into `Arduino.h` or `variant.h`, add it to that block. `main.cpp` is the only source file; a second `.cpp` file would need the same block, or a forced include (`-include`) in `platformio.ini`.
 - LovyanGFX's rotation numbering for this board is offset by 180° from the old TFT_eSPI-based fork this project used to use — call `tft.setRotation(1)` (not `3`) for correct upright landscape orientation.
 
+### Images
+
+Images on the display, such as the warning sign on the fault screen, are drawn as SVG files in `assets/`. A script converts each one into a C++ header in `src/images/`, which the firmware draws by calling the header's `draw()` function. The generated headers are committed, so building the firmware doesn't need Python.
+
+| SVG | Generated header | Used in |
+|---|---|---|
+| `assets/warning_sign.svg` | `src/images/WarningSign.h` | `src/safety/FaultScreen.h` |
+
+To change an image:
+
+1. Edit the SVG, in a text editor or a drawing program such as Inkscape. Draw at the size it should appear on screen: one SVG unit is one pixel. The display has 320 × 240 pixels.
+2. Install the script's dependencies (only needed once):
+
+   ```
+   pip install -r tools/requirements.txt
+   ```
+
+3. Regenerate the header. The last argument is the C++ namespace the image gets:
+
+   ```
+   python tools/svg_to_bitmap.py assets/warning_sign.svg src/images/WarningSign.h WarningSign
+   ```
+
+   The script prints the image's size in bytes and how much the colour reduction (see below) changed it.
+4. Build and upload as usual, and commit both the SVG and the regenerated header.
+
+Things to know:
+
+- Never edit the generated header by hand; the next regeneration overwrites it.
+- To save flash, images are stored with a limited colour table (a palette): by default 16 colours, so each pixel takes 4 bits instead of the 16 bits of full colour. The warning sign takes about 4.9 KB instead of 19.5 KB. 16 colours is plenty for icons made of a few flat colours plus the smoothed shades along their edges. If the script reports many changed pixels for a more colourful image, use `--bits 8` (256 colours, 8 bits per pixel). For an image with only 2 or 4 flat colours and no smoothing, `--bits 1` or `--bits 2` makes it smaller still.
+- The script renders the image on a black background, the screen background, so its smoothed edges blend into black. Transparent parts of the SVG come out black.
+- The header contains the image's `WIDTH`, `HEIGHT` and a `draw(tft, x, y)` function, which draws it with its top-left corner at (x, y). All its data is stored in flash, not RAM.
+- If the image size changes, check the layout of the screen that uses it. `FaultScreen.h` centres the warning sign horizontally, but its vertical position (`SIGN_Y`) and the positions of the text above and the temperature below are fixed.
+- To add a new image, run the script with a new SVG, header name and namespace, add a row to the table above, and include the header where the image is drawn.
+
 ## Hardware
 
 ### Inputs
