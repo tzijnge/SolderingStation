@@ -4,6 +4,7 @@
 
 #include "TemperatureDisplay.h"
 #include "TipTemperature.h"
+#include "display/Screen.h"
 #include "tasks/TaskPriority.h"
 
 // Polls tipTemperature's value once per scheduler round and redraws only
@@ -22,12 +23,25 @@
 // filtered value - made a tip regulated right at e.g. 250 flicker between
 // 249/250/251, since its filtered reading still wanders across the
 // 249.5/250.5 rounding boundaries all the time.
+//
+// Used once per screen that shows the tip temperature (Main and Fault, each
+// with its own TemperatureDisplay); only draws while its own screen is
+// active. invalidate() forces a redraw - ScreenManager calls it after
+// switching to that screen, since the cleared panel no longer shows
+// lastDrawnValue.
 class TipTemperatureDisplayTask : public etl::task {
 public:
-  TipTemperatureDisplayTask(TipTemperature &tipTemperature_, TemperatureDisplay &display_)
-      : etl::task(TASK_PRIORITY_DISPLAY), tipTemperature(tipTemperature_), display(display_) {}
+  TipTemperatureDisplayTask(const TipTemperature &tipTemperature_, TemperatureDisplay &display_,
+                            const ActiveScreen &activeScreen_, Screen screen_)
+      : etl::task(TASK_PRIORITY_DISPLAY), tipTemperature(tipTemperature_), display(display_),
+        activeScreen(activeScreen_), screen(screen_) {}
+
+  void invalidate() { lastDrawnValue = INT16_MIN; }
 
   uint32_t task_request_work() const override {
+    if (!activeScreen.is(screen)) {
+      return 0u;
+    }
     float delta = tipTemperature.filteredValue() - lastDrawnValue;
     return (delta > HYSTERESIS_C || delta < -HYSTERESIS_C) ? 1u : 0u;
   }
@@ -45,7 +59,9 @@ private:
   // still always shows up.
   static constexpr float HYSTERESIS_C = 0.75f;
 
-  TipTemperature &tipTemperature;
+  const TipTemperature &tipTemperature;
   TemperatureDisplay &display;
+  const ActiveScreen &activeScreen;
+  Screen screen;
   int16_t lastDrawnValue = INT16_MIN; // guarantees the first round always draws
 };

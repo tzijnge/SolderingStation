@@ -9,7 +9,9 @@
 // measurement cycle (see main.cpp's measureAndResume(), ~every 100ms) -
 // SetSampleTime() below matches that cadence.
 //
-// While the station is off, output is forced to 0 and the PID is held in
+// heaterOn comes from StationFsm (only its On state may heat) - passed in
+// rather than queried, so this class doesn't depend on the FSM. While it's
+// false (station off or faulted), output is forced to 0 and the PID is held in
 // MANUAL mode rather than left AUTOMATIC with a stale/growing integral term.
 // Verified against the library's actual source (PID_v1.cpp): SetMode(AUTOMATIC)
 // calls Initialize() on a MANUAL->AUTOMATIC transition, which seeds the
@@ -38,11 +40,11 @@ public:
         pid(&input, &output, &setpointValue, kp, ki, kd, DIRECT) {
     pid.SetOutputLimits(0, 255);
     pid.SetSampleTime(100);
-    pid.SetMode(MANUAL); // starts off, matching TemperatureSetpoint's initial state
+    pid.SetMode(MANUAL); // starts off, matching StationFsm's initial Off state
   }
 
-  uint8_t compute(float measuredTempC) {
-    if (!setpoint.isOn()) {
+  uint8_t compute(float measuredTempC, bool heaterOn) {
+    if (!heaterOn) {
       output = 0;
       pid.SetMode(MANUAL);
       return 0;

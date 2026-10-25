@@ -94,7 +94,13 @@ tip sensor (16uV/°C) -> PCB amplifier (gain 68000/150) -> ADC (12-bit, 3.3V ref
 - The reverse-polarity protection diode on the supply input is a **Schottky** diode (not silicon) — its lower forward voltage drop (~0.2–0.3V vs. ~0.7V) leaves more of the supply's voltage headroom for the heater.
 - PWM output pin: `BCM23`/A2.
 
-⚠️ **Safety note:** at the time of writing, this firmware has no firmware-enforced maximum duty cap, no sensor fault-checking (e.g. a disconnected sensor reading as "too cold" and driving the PID to sustained high duty), and no hardware watchdog. Until these are implemented, do not leave the station heating unattended.
+⚠️ **Safety note:** the firmware cuts the heater when the tip goes above a fixed temperature limit (`OVER_TEMPERATURE_LIMIT_C` in `src/safety/SafetyMonitor.h`). The fault stays latched, shown on a separate fault screen, until the tip has cooled below the limit and the knob is pressed. That check can only catch a tip that reads too *hot*. At the time of writing the firmware still has:
+
+- no thermal-runaway or sensor fault detection: a shorted or detached sensor reads as "too cold" and drives the PID to sustained full power;
+- no power or duty cap;
+- no hardware watchdog.
+
+These are tracked in issues #2, #3, #4 and #7. Until they're implemented, do not leave the station heating unattended.
 
 ### Front panel
 
