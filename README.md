@@ -32,7 +32,7 @@ Build and upload using the PlatformIO sidebar in VS Code (project/build/upload i
 
 ### Known build gotchas
 
-- `Arduino.h` `#define`s `round(x)` as a macro, which breaks ETL's `etl::to_string`. Add `#undef round` right after `#include <Arduino.h>` and before any `etl/*` includes in any file that includes both.
+- `Arduino.h` (with the WIO Terminal's `variant.h` it pulls in) `#define`s names that break standard library and ETL headers parsed after it: the function-like macros `min`, `max`, `abs` and `round`, and pin names such as `D1` and `D2`, which ETL uses as template parameter names. The fix is to include the affected headers *before* `Arduino.h`: their include guards then keep them from being parsed again once the macros exist. That's the include block at the very top of `src/main.cpp`. If a newly used `<...>` or `etl/...` header fails with odd errors pointing into `Arduino.h` or `variant.h`, add it to that block. `main.cpp` is the only source file; a second `.cpp` file would need the same block, or a forced include (`-include`) in `platformio.ini`.
 - LovyanGFX's rotation numbering for this board is offset by 180° from the old TFT_eSPI-based fork this project used to use — call `tft.setRotation(1)` (not `3`) for correct upright landscape orientation.
 
 ## Hardware

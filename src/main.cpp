@@ -1,3 +1,18 @@
+// Must come before Arduino.h, which (with the Wio Terminal variant.h it
+// pulls in) #defines names that break these headers if parsed afterwards:
+// - pin names like D1/D2, used as template parameter names in ETL's
+//   ranges.h (pulled in by algorithm.h, and so by nearly every ETL header,
+//   from C++17 on);
+// - function-like min/max/abs/round macros (defined even for C++ by the
+//   Seeed core), which mangle calls to the same-named functions in the
+//   standard library and in ETL's to_string/string_stream.
+// Parsing them first means the macros don't exist yet, and their include
+// guards keep them from being parsed again after they do. main.cpp is the
+// only translation unit, so this is the one place that needs it.
+#include <array>
+#include <etl/algorithm.h>
+#include <etl/string_stream.h>
+
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
 #include <Wire.h>
@@ -131,7 +146,7 @@ etl::timer::id::type measureTimerId; // assigned once in setup()
 // MOVING_AVG_SAMPLES so the average isn't biased low by not-yet-written
 // zeros in the buffer during the first 2 seconds after boot.
 constexpr size_t MOVING_AVG_SAMPLES = 20;
-float movingAvgBuffer[MOVING_AVG_SAMPLES] = {};
+std::array<float, MOVING_AVG_SAMPLES> movingAvgBuffer{};
 size_t movingAvgIndex = 0;
 size_t movingAvgCount = 0;
 float movingAvgSum = 0.0f;
