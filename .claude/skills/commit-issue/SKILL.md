@@ -8,7 +8,7 @@ argument-hint: <issue number>
 
 Commits the uncommitted work in this repo (tzijnge/SolderingStation) for one GitHub issue onto that issue's branch. You run this in the main session because it needs the conversation's context: what was tested, which values are deliberate, what belongs together. Commit messages come from the `commit-message` agent (`.claude/agents/commit-message.md`); this skill owns everything around them.
 
-`gh` may need `export PATH="$PATH:/c/Program Files/GitHub CLI"` in Git Bash.
+Read `docs/workflow.md` first: it holds the conventions (branch naming, commit format, board) this skill follows. Prefix `gh` commands with `export PATH="$PATH:/c/Program Files/GitHub CLI";`. Normally the branch already exists from `/start-issue`; step 2 covers the cases where it doesn't.
 
 ## 1. Identify the issue
 
@@ -17,14 +17,10 @@ Commits the uncommitted work in this repo (tzijnge/SolderingStation) for one Git
 
 ## 2. Get onto the issue branch
 
-Branch name: `#<n>-` followed by the issue title in lowercase, with every run of characters other than `a-z` and `0-9` replaced by a single `-`, and no leading or trailing `-`. Examples:
-- #1 "Hard over-temperature cutoff" -> `#1-hard-over-temperature-cutoff`
-- #10 "Selectable temperature step (1/5/10)" -> `#10-selectable-temperature-step-1-5-10`
-
-Always quote it in the shell: `#` starts a comment.
+Branch name per `docs/workflow.md` (always quoted in the shell).
 
 - Already on that branch: continue.
-- On `main` (or another branch without commits of its own) with the work uncommitted: `git switch -c '<branch>'`; uncommitted changes come along.
+- On `main` (or another branch without commits of its own) with the work uncommitted: `/start-issue` was skipped. `git switch -c '<branch>'` (uncommitted changes come along), and move the issue to *In Progress* on the board as in `/start-issue` step 4.
 - The branch exists but isn't checked out: `git switch '<branch>'` if git allows it with the current changes; otherwise stop and ask.
 - On a different issue's branch: stop and ask - the work may belong to that issue.
 
