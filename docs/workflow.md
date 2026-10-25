@@ -38,7 +38,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 ### Pull requests
 
 - Merged with **Squash and merge**: `main` gets one commit per issue, and its message is the PR's title and description. The topic commits stay visible in the closed PR.
-- So the PR title and description *are* the final commit message, with the same structure as the topic commits. The `commit-message` agent writes it as a "squash message", Claude checks it and creates the PR as a GitHub **draft PR**. You review it, mark it *Ready for review* and merge it with *Squash and merge*:
+- So the PR title and description *are* the final commit message, with the same structure as the topic commits. The `commit-message` agent writes the PR description, Claude checks it and creates the PR as a GitHub **draft PR**. You review it, mark it *Ready for review* and merge it with *Squash and merge*:
   - Title: `#<n> <issue title>` (no topic: it covers the whole issue).
   - Description: the bullets of the issue's topic commits with the irrelevant ones removed, then `Closes #<n>`:
 

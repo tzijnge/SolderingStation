@@ -1,6 +1,6 @@
 ---
 name: commit-message
-description: Writes commit messages for this repo in the project's format. Two kinds - a topic commit message for the staged (or, if nothing is staged, all uncommitted) changes ("#<issue> <issue title>: <topic>" + "* " bullet list), or, when asked for a squash message, the final message for an issue's squash merge onto main ("#<issue> <issue title>" + the relevant bullets of all the issue's commits). Read-only - returns the message text, never commits.
+description: Writes commit messages for this repo in the project's format. Two kinds - a topic commit message for the staged (or, if nothing is staged, all uncommitted) changes ("#<issue> <issue title>: <topic>" + "* " bullet list), or, when asked for a PR description, the title and description of an issue's pull request ("#<issue> <issue title>" + the relevant bullets of all the issue's commits). Read-only - returns the message text, never commits.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 ---
@@ -28,7 +28,7 @@ You write git commit messages for the SolderingStation firmware repo (GitHub: tz
 - Keep line 1 at most 72 characters, suffix included. If it doesn't fit, shorten the topic first, then the title, and mention a shortened title in the note.
 - Line 2: always blank. (Git treats everything up to the first blank line as the subject, so without it tools show the whole message as one line.)
 - Then one bullet per feature or modification, each on its own line starting with `* `.
-- Never write a GitHub closing keyword (close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved) directly before an issue reference (`#<n>`) anywhere in a topic commit message - only a squash message ends with one (see below). Issues are closed through the pull request on GitHub, and GitHub also acts on such keywords in the commits of a merged PR. A keyword not followed by `#<n>` ("Fix display flicker") is fine.
+- Never write a GitHub closing keyword (close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved) directly before an issue reference (`#<n>`) anywhere in a topic commit message - only a PR description ends with one (see below). Issues are closed through the pull request on GitHub, and GitHub also acts on such keywords in the commits of a merged PR. A keyword not followed by `#<n>` ("Fix display flicker") is fine.
 - No other trailers (Co-Authored-By etc.) - the caller adds those.
 
 ## Writing the bullets
@@ -45,9 +45,9 @@ You write git commit messages for the SolderingStation firmware repo (GitHub: tz
 - No hard line breaks: each bullet is a single line, however long - the user reads messages only in viewers that wrap lines themselves.
 - Plain ASCII where reasonable (`C`/`deg` rather than `°`) so the message reads well in every terminal.
 
-## Squash message (final message on main)
+## PR description
 
-When the caller asks for a squash message for issue `<n>`, you write the message that ends up on `main` when the issue's branch is squash-merged; it's used as the PR title and description. Input is all the issue's commits, `git log main..<branch> --reverse --format=%B` (branch from the caller, or the current branch), plus the overall change `git diff main...<branch> --stat` and the actual diff where you need to check something.
+When the caller asks for a PR description for issue `<n>`, you write the title and description of the pull request that brings the issue's branch into `main`. It summarizes the whole issue in the same structure as the topic commits. Input is all the issue's commits, `git log main..<branch> --reverse --format=%B` (branch from the caller, or the current branch), plus the overall change `git diff main...<branch> --stat` and the actual diff where you need to check something.
 
 Format:
 
@@ -60,7 +60,7 @@ Format:
 Closes #<n>
 ```
 
-- Line 1: `#<n> <issue title>`, exactly the GitHub title, NO topic suffix - this commit covers the whole issue.
+- Line 1: `#<n> <issue title>`, exactly the GitHub title, NO topic suffix - the PR covers the whole issue.
 - The bullets repeat the bullets of the topic commits - keep their wording where possible - with irrelevant items removed. Irrelevant:
   - fixes for QA or review comments, build fixes, typo fixes;
   - added or updated tests;
@@ -72,7 +72,7 @@ Closes #<n>
 - A blank line, then `Closes #<n>` as the very last line - the only place a closing keyword is allowed, because it closes the issue when the PR is merged.
 - All other bullet rules apply (imperative, short reasons in parentheses, one line per bullet with no hard line breaks, plain ASCII). No other trailers.
 
-For a squash message, return the title (line 1) and the description (everything after the blank line) in two separate code blocks, so they can be pasted into GitHub's PR form, followed by notes listing which commit bullets you dropped and why, a few words each.
+For a PR description, return the title (line 1) and the description (everything after the blank line) in two separate code blocks, followed by notes listing which commit bullets you dropped and why, a few words each.
 
 ## Output
 
