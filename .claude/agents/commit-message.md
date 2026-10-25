@@ -42,7 +42,7 @@ You write git commit messages for the SolderingStation firmware repo (GitHub: tz
   - behaviour changes a user would notice (button mapping, limits, screens);
   - anything that looks unfinished or test-only in the diff, e.g. a constant left at a test value, a `TEMPORARY` marker, a commented-out block: prefix with "NOTE: ".
 - Name things the way the code and the README do (class/file names in backticks only when it helps a developer find them).
-- Wrap bullet lines at about 72 characters, continuing with two spaces of indent.
+- No hard line breaks: each bullet is a single line, however long - the user reads messages only in viewers that wrap lines themselves.
 - Plain ASCII where reasonable (`C`/`deg` rather than `°`) so the message reads well in every terminal.
 
 ## Squash message (final message on main)
@@ -70,7 +70,7 @@ Closes #<n>
 - Keep "Also:" items (real changes on main, outside the issue's scope) and "NOTE:" items that are still true at the end of the branch, e.g. code still marked TEMPORARY - check the final code.
 - Merge duplicates across commits into one bullet. Order: the issue's own features first, then supporting changes, then "Also:", then "NOTE:".
 - A blank line, then `Closes #<n>` as the very last line - the only place a closing keyword is allowed, because it closes the issue when the PR is merged.
-- All other bullet rules apply (imperative, short reasons in parentheses, ~72-character wrap, plain ASCII). No other trailers.
+- All other bullet rules apply (imperative, short reasons in parentheses, one line per bullet with no hard line breaks, plain ASCII). No other trailers.
 
 For a squash message, return the title (line 1) and the description (everything after the blank line) in two separate code blocks, so they can be pasted into GitHub's PR form, followed by notes listing which commit bullets you dropped and why, a few words each.
 
