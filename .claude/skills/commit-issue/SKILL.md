@@ -56,11 +56,19 @@ Run the `commit-message` agent in the foreground for each staged commit. Its pro
 
 Check the returned message against the code before using it - fix factual errors yourself (e.g. a wrong value), don't pass them on.
 
-## 7. Commit
+## 7. User review - always, for every commit
 
-Write the message to a file in the scratchpad, append a blank line and the `Co-Authored-By` trailer from the session's attribution instructions, and `git commit -F <file>`. Never use `--no-verify`, `--amend` on pushed commits, or force options.
+Never commit without the user's explicit OK for that commit - no exceptions, also not for small tooling or docs commits. With the commit staged and its message checked:
+- show the user `git diff --cached --stat` and the proposed message (in a code block);
+- ask them to review the staged changes (e.g. VS Code's Source Control view, "Staged Changes") and the message, then wait;
+- if they want changes: make them, re-stage, regenerate or adjust the message if needed, and ask again.
+Only an OK given after seeing this commit's staged changes counts. When several commits are planned, review them one at a time.
 
-## 8. Finish
+## 8. Commit
+
+After the OK: write the message to a file in the scratchpad, append a blank line and the `Co-Authored-By` trailer from the session's attribution instructions, and `git commit -F <file>`. Never use `--no-verify`, `--amend` on pushed commits, or force options.
+
+## 9. Finish
 
 - `git status --short` must be clean (or only show what the user chose to leave out), and `git log --oneline main..HEAD` lists the new commits.
 - Never push unless the user asks. The PR (created by `/finish-issue`) closes the issue - so no closing keywords (`Closes #n`) in commits.

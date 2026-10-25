@@ -32,6 +32,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 
 - Format: `#<n> <issue title>: <topic>`, a blank line, then a `* ` bullet list. Messages are written by the `commit-message` agent (`.claude/agents/commit-message.md`), which owns the details of the format.
 - Each commit covers one topic; work that spans topics becomes several commits.
+- Nothing is committed without your review: Claude stages each commit, shows its changes and message, and waits for your OK before committing.
 - Nothing is pushed without being asked.
 
 ### Pull requests
