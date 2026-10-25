@@ -4,9 +4,9 @@
 
 // Converts a raw 12-bit ADC sample (0..4095, 0..3.3V - see
 // analogReadResolution(12) in main.cpp) into a Celsius tip temperature.
-// Signal chain, worked backwards from the ADC reading to the sensor's own
-// output voltage:
-//   tip sensor (16uV/*C) -> PCB amplifier (gain 68000/150) -> ADC (12-bit, 3.3V ref)
+// Signal chain (nominal - the actual conversion is the measured
+// calibration in onAdcSample()):
+//   tip sensor (~16uV/*C) -> PCB amplifier (gain 68000/150) -> ADC (12-bit, 3.3V ref)
 //
 // Just stores the latest value - doesn't notify anyone. The (slow, SPI-
 // bound) redraw is decoupled into TipTemperatureDisplayTask, which polls
@@ -17,14 +17,23 @@
 class TipTemperature {
 public:
   void onAdcSample(uint16_t rawAdc) {
-    constexpr float VREF = 3.3f;
-    constexpr float ADC_MAX = 4095.0f; // 2^12 - 1
-    constexpr float AMPLIFIER_GAIN = 68000.0f / 150.0f;
-    constexpr float SENSOR_MICROVOLTS_PER_DEGREE = 16.0f;
+    // Calibrated against an FG-100 tip thermometer (room temperature ~17C),
+    // 10 points from room temperature to 454C: cubic least-squares fit of
+    // FG-100 reading vs raw ADC, residuals within +/-3C (mostly +/-1C).
+    // The nominal chain above (0.1111 C/count through zero) read up to 25C
+    // low - the real response has an offset and bends below ~200C. The
+    // cubic is monotonic over the whole 0..4095 range (459.5C at 4095).
+    //
+    // No cold-junction compensation: the sensor measures tip minus ambient,
+    // so readings shift by roughly (ambient - 17C).
+    constexpr float C0 = 16.199f;
+    constexpr float C1 = 0.14006f;
+    constexpr float C2 = -1.6210e-5f;
+    constexpr float C3 = 2.0614e-9f;
 
-    float vAdc = (rawAdc * VREF) / ADC_MAX;
-    float vSensor = vAdc / AMPLIFIER_GAIN;
-    value_ = (vSensor * 1.0e6f) / SENSOR_MICROVOLTS_PER_DEGREE;
+    rawAdc_ = rawAdc;
+    float x = rawAdc;
+    value_ = C0 + x * (C1 + x * (C2 + x * C3));
 
     // Exponential moving average - a much lighter filter than the 2-second
     // moving average used for the Teleplot trend line (see main.cpp): that
@@ -48,9 +57,14 @@ public:
   // own hysteresis on top).
   float filteredValue() const { return filtered_; }
 
+  // TEMPORARY: latest raw ADC sample, for calibration telemetry (fitting
+  // the ADC-to-temperature conversion against an external tip thermometer).
+  uint16_t rawAdc() const { return rawAdc_; }
+
 private:
   static constexpr float FILTER_ALPHA = 0.3f;
 
+  uint16_t rawAdc_ = 0;
   float value_ = 0.0f;
   float filtered_ = 0.0f;
 };
