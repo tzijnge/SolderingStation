@@ -41,7 +41,7 @@
 // __WFI() wakes promptly on this pin instead of waiting for the next 1ms
 // SysTick tick; its callback doesn't need to do anything itself.
 //
-// EncoderTask knows nothing about its consumer (currently TemperatureSetpoint)
+// EncoderTask knows nothing about its consumer (currently StationFsm)
 // - it just reports raw hardware events through onDiff_/onPress_, two
 // independently injected delegates. Like all etl::delegate use in this
 // project, these must be named objects with program lifetime (e.g. a
@@ -93,7 +93,7 @@ public:
     // Calling onPress() on every one of those reads was harmless for the
     // old Counter::reset() it used to be bound to (idempotent - resetting
     // an already-zero counter repeatedly is a no-op), but is not harmless
-    // for TemperatureSetpoint::toggle() (each call flips on/off), so it's
+    // for StationFsm's Press event (each one flips on/off), so it's
     // now gated on pressHandled to fire exactly once per hold.
     twist.isMoved();
     int16_t rawCount = twist.getCount();

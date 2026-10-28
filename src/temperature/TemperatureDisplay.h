@@ -3,7 +3,10 @@
 #include <LovyanGFX.hpp>
 #undef round // Arduino.h's round() macro (pulled in via LovyanGFX.hpp) breaks ETL's to_string float formatting
 #include <etl/string.h>
+#include <etl/string_view.h>
 #include <etl/to_string.h>
+
+#include "display/DrawString.h"
 
 // Redraws a temperature number whenever notified of a new value; the
 // degree-C suffix next to it is static (font 7 has no degree sign or
@@ -23,7 +26,13 @@ public:
   // own clearing width can never drift out of sync with each other again.
   static constexpr int32_t NUMBER_PADDING = 110;
 
-  TemperatureDisplay(LGFX &tft_, int32_t y_, uint16_t color_) : tft(tft_), y(y_), color(color_) {}
+  // Left: at the fixed left margin (the Main screen's two rows line up).
+  // Center: the whole number + degree-C block centered on the screen (the
+  // Fault screen) - computed in begin(), since it needs the font metrics.
+  enum class Alignment : uint8_t { Left, Center };
+
+  TemperatureDisplay(LGFX &tft_, int32_t y_, uint16_t color_, Alignment alignment_ = Alignment::Left)
+      : tft(tft_), y(y_), color(color_), alignment(alignment_) {}
 
   // Draws the degree-C suffix once. The degree mark is a small solid ring
   // (filled circle with a smaller filled circle punched out of the
@@ -38,8 +47,17 @@ public:
   // suffix (that mismatch, an independently-guessed number here vs the
   // actual padding in main.cpp, is what caused the circle to get its left
   // half erased before).
+  //
+  // Must be called again whenever the screen this is on has been cleared
+  // (see ScreenManager) - the suffix is only ever drawn here.
   void begin() {
-    int32_t circleX = LEFT_MARGIN + NUMBER_PADDING + 10 + DEGREE_RADIUS;
+    if (alignment == Alignment::Center) {
+      tft.setFont(&fonts::DejaVu72);
+      int32_t width = NUMBER_PADDING + SUFFIX_OFFSET + tft.textWidth("C");
+      left = (tft.width() - width) / 2;
+    }
+
+    int32_t circleX = left + NUMBER_PADDING + 10 + DEGREE_RADIUS;
     int32_t circleY = y + DEGREE_RADIUS + 4;
 
     tft.setTextColor(color, TFT_BLACK);
@@ -63,7 +81,7 @@ public:
     etl::to_string(degreesC, text);
 
     tft.setTextColor(color, TFT_BLACK);
-    drawRightAligned(text.c_str());
+    drawRightAligned(text);
   }
 
   // Placeholder for "no active setpoint" (station off) - font 7 only has
@@ -77,20 +95,24 @@ public:
 private:
   static constexpr int32_t LEFT_MARGIN = 20;
   static constexpr int32_t DEGREE_RADIUS = 6;
+  // From the number box's right edge to the 'C' (see begin()).
+  static constexpr int32_t SUFFIX_OFFSET = 10 + 2 * DEGREE_RADIUS + 6;
 
-  // Right-aligned within the same [LEFT_MARGIN, LEFT_MARGIN+NUMBER_PADDING]
+  // Right-aligned within the same [left, left+NUMBER_PADDING]
   // box the old left-aligned number used to clear - TR_DATUM's padding
   // fills leftward from the given x (see LGFXBase::draw_string()), so
   // passing the box's right edge keeps the exact same clear footprint,
   // just with digits growing left instead of right as the value's width
   // changes. The degree-C suffix (begin(), above) doesn't move - it's
   // positioned off NUMBER_PADDING, not off the number's own alignment.
-  void drawRightAligned(const char *text) {
+  void drawRightAligned(etl::string_view text) {
     tft.setTextDatum(TR_DATUM);
-    tft.drawString(text, LEFT_MARGIN + NUMBER_PADDING, y);
+    drawString(tft, text, left + NUMBER_PADDING, y);
   }
 
   LGFX &tft;
   int32_t y;
   uint16_t color;
+  Alignment alignment;
+  int32_t left = LEFT_MARGIN; // replaced in begin() when centered
 };

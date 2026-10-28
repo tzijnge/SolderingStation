@@ -1,3 +1,18 @@
+// Must come before Arduino.h, which (with the Wio Terminal variant.h it
+// pulls in) #defines names that break these headers if parsed afterwards:
+// - pin names like D1/D2, used as template parameter names in ETL's
+//   ranges.h (pulled in by algorithm.h, and so by nearly every ETL header,
+//   from C++17 on);
+// - function-like min/max/abs/round macros (defined even for C++ by the
+//   Seeed core), which mangle calls to the same-named functions in the
+//   standard library and in ETL's to_string/string_stream.
+// Parsing them first means the macros don't exist yet, and their include
+// guards keep them from being parsed again after they do. main.cpp is the
+// only translation unit, so this is the one place that needs it.
+#include <array>
+#include <etl/algorithm.h>
+#include <etl/string_stream.h>
+
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
 #include <Wire.h>
@@ -9,6 +24,15 @@
 
 #include "adc/AdcInput.h"
 #include "counter/CounterPwmOutput.h"
+#include "display/DrawString.h"
+#include "display/MainScreen.h"
+#include "display/Screen.h"
+#include "display/ScreenManager.h"
+#include "safety/FaultScreen.h"
+#include "safety/SafetyMonitor.h"
+#include "station/StationEvents.h"
+#include "station/StationFsm.h"
+#include "system/Panic.h"
 #include "tasks/EncoderTask.h"
 #include "tasks/NotifyTask.h"
 #include "temperature/SetpointDisplayTask.h"
@@ -31,40 +55,49 @@ TWIST twist;
 // 98, another 44px gap, second row top at y=148, bottom at 196, then a
 // final 44px margin to the bottom edge.
 TemperatureDisplay setpointDisplay(tft, 50, TFT_GREEN); // button/encoder controlled
+
+// Which full screen (Main/Fault) is showing - switched by screenManager
+// below, checked by every display task so each only draws on its own
+// screen. See display/Screen.h.
+ActiveScreen activeScreen;
 CounterPwmOutput pwmOutput(BCM23);
 
-// The only place the setpoint's value, its 50..450 clamp, and the station's
-// on/off state live. Neither producer below knows this type exists beyond
-// what's bound into their delegates. Not driven by PWM directly (contrast
-// with the old Counter this replaces) - temperatureController polls it
-// once per ADC measurement cycle instead (see measureAndResume below);
-// setpointDisplayTask polls it for the redraw (see below).
+// The only place the setpoint's value and its 50..430 clamp live. Not
+// driven by PWM directly (contrast with the old Counter this replaces) -
+// temperatureController polls it once per ADC measurement cycle instead
+// (see measureAndResume below); setpointDisplayTask polls it for the redraw
+// (see below).
 TemperatureSetpoint setpoint;
 
-// onDiff/onPress bind directly to TemperatureSetpoint's own methods - no
-// wrapper needed since the delegate signatures already match exactly.
-// EncoderTask itself never sees the TemperatureSetpoint type.
-EncoderTask encoderTask(twist, BCM21,
-                        etl::delegate<void(int16_t)>::create<TemperatureSetpoint, &TemperatureSetpoint::diffSteps>(setpoint),
-                        etl::delegate<void(void)>::create<TemperatureSetpoint, &TemperatureSetpoint::toggle>(setpoint));
+// Reports fault conditions each measurement cycle (see measureAndResume
+// below); stationFsm latches them.
+SafetyMonitor safetyMonitor;
 
-// Each button needs a fixed argument (+-1 step) or no argument at all baked
-// in, which a plain bound-member delegate can't express, hence these small
-// lambdas rather than binding straight to TemperatureSetpoint::diffSteps/
-// toggle. Like all etl::delegate use in this project, they must be named
-// objects with program lifetime, never inline lambda literals (see
-// NotifyTask for why).
-auto decrementSetpoint = []() { setpoint.diffSteps(-1); };
-auto toggleSetpoint = []() { setpoint.toggle(); };
-auto incrementSetpoint = []() { setpoint.diffSteps(1); };
-NotifyTask leftButtonTask(decrementSetpoint);
-NotifyTask middleButtonTask(toggleSetpoint);
-NotifyTask rightButtonTask(incrementSetpoint);
+// The station's top-level state (Off/On/Fault) - decides what each input
+// means and whether the heater may run. See StationFsm.h for the
+// transitions.
+StationFsm stationFsm(setpoint, safetyMonitor);
+
+// Input producers only post events; what they mean is up to stationFsm's
+// current state. Each button needs a fixed argument (+-1 step) baked in,
+// which a plain bound-member delegate can't express. Like all
+// etl::delegate use in this project, they must be named objects with
+// program lifetime, never inline lambda literals (see NotifyTask for why).
+// EncoderTask itself never sees the StationFsm type.
+auto rotate = [](int16_t steps) { stationFsm.receive(StationEvent::Rotate(steps)); };
+auto press = []() { stationFsm.receive(StationEvent::Press()); };
+auto rotateDown = []() { rotate(-1); };
+auto rotateUp = []() { rotate(1); };
+
+EncoderTask encoderTask(twist, BCM21, rotate, press);
+NotifyTask leftButtonTask(rotateDown);
+NotifyTask middleButtonTask(press);
+NotifyTask rightButtonTask(rotateUp);
 
 // Polls setpoint rather than observing it - see SetpointDisplayTask and
 // TemperatureSetpoint's own comments for why the redraw is decoupled from
 // whichever task (a button or the encoder) just changed the value.
-SetpointDisplayTask setpointDisplayTask(setpoint, setpointDisplay);
+SetpointDisplayTask setpointDisplayTask(setpoint, stationFsm, setpointDisplay, activeScreen);
 
 // Raw 12-bit ADC reading (0..4095, VDDANA/3.3V reference - both are this
 // board's defaults) on A3/BCM24/40-pin header pin 18, sampled once per
@@ -131,7 +164,7 @@ etl::timer::id::type measureTimerId; // assigned once in setup()
 // MOVING_AVG_SAMPLES so the average isn't biased low by not-yet-written
 // zeros in the buffer during the first 2 seconds after boot.
 constexpr size_t MOVING_AVG_SAMPLES = 20;
-float movingAvgBuffer[MOVING_AVG_SAMPLES] = {};
+std::array<float, MOVING_AVG_SAMPLES> movingAvgBuffer{};
 size_t movingAvgIndex = 0;
 size_t movingAvgCount = 0;
 float movingAvgSum = 0.0f;
@@ -147,7 +180,19 @@ auto pauseForMeasurement = []() {
 };
 auto measureAndResume = []() {
   adcInput.sample();
-  uint8_t duty = temperatureController.compute(tipTemperature.filteredValue());
+  SafetyMonitor::Fault fault = safetyMonitor.check(tipTemperature.value());
+  if (fault != SafetyMonitor::Fault::None) {
+    stationFsm.receive(StationEvent::FaultDetected(fault));
+  }
+  // compute() still runs while not On: it returns 0 and drops the PID to
+  // MANUAL, so the integral is re-seeded cleanly once the station is turned
+  // back on. The explicit 0 is belt and braces, independent of the
+  // controller.
+  bool heaterOn = stationFsm.isOn();
+  uint8_t duty = temperatureController.compute(tipTemperature.filteredValue(), heaterOn);
+  if (!heaterOn) {
+    duty = 0;
+  }
   lastDuty = duty;
   // Still paused here - onCounterChanged() only updates lastValue without
   // writing to the pin (see CounterPwmOutput::pause()), so the new duty
@@ -187,16 +232,30 @@ auto printTelemetry = []() {
   // internally, for resume - this only affects what's plotted), so the
   // plot clearly shows "no active setpoint" at startup and on every
   // off-toggle instead of a misleading stale/preserved number.
-  Serial.print(">setpoint:"); Serial.println(setpoint.isOn() ? setpoint.value() : 0);
+  Serial.print(">setpoint:"); Serial.println(stationFsm.isOn() ? setpoint.value() : 0);
   Serial.print(">measured:"); Serial.println(tipTemperature.value());
   Serial.print(">measuredFiltered:"); Serial.println(tipTemperature.filteredValue());
   Serial.print(">measuredAvg:"); Serial.println(movingAvgSum / movingAvgCount);
   Serial.print(">duty:"); Serial.println(lastDuty);
+  Serial.print(">adcRaw:"); Serial.println(tipTemperature.rawAdc());
+  Serial.print(">fault:"); Serial.println(static_cast<uint8_t>(stationFsm.fault()));
 };
 NotifyTask pwmPauseTask(pauseForMeasurement);
 NotifyTask adcSampleTask(measureAndResume);
 NotifyTask telemetryTask(printTelemetry);
-TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisplay);
+TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisplay, activeScreen, Screen::Main);
+
+// The Fault screen shows the tip temperature too (centered, below the
+// warning sign), with its own display/task pair - only one of the two tasks
+// draws at a time, depending on activeScreen.
+TemperatureDisplay faultTemperatureDisplay(tft, FaultScreen::TEMPERATURE_Y, TFT_WHITE,
+                                           TemperatureDisplay::Alignment::Center);
+TipTemperatureDisplayTask faultTemperatureDisplayTask(tipTemperature, faultTemperatureDisplay, activeScreen,
+                                                      Screen::Fault);
+
+MainScreen mainScreen(tft, setpointDisplay, temperatureDisplay, setpointDisplayTask, temperatureDisplayTask);
+FaultScreen faultScreen(tft, faultTemperatureDisplay, faultTemperatureDisplayTask);
+ScreenManager screenManager(tft, stationFsm, activeScreen, mainScreen, faultScreen);
 
 // "Single" (not "multiple"): processes at most one unit of work per task
 // per round before moving to the next, so a task whose task_request_work()
@@ -205,7 +264,60 @@ TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisp
 // temperatureController and pwmOutput aren't scheduler tasks at all - each
 // update happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 9> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 11> scheduler;
+
+// See system/Panic.h. Runs inside whichever task hit the error and never
+// returns to the scheduler, so no other task (display redraws, the
+// measurement cycle that would resume PWM) runs again before the reboot.
+void panic(etl::string_view title, etl::string_view detail) {
+  // Heater off first, before anything that could itself go wrong. Stopping
+  // swTimer as well keeps the PWM-pause/measure timers from even queueing
+  // work - not strictly needed (the scheduler never runs again), but it
+  // leaves nothing that could touch the PWM pin.
+  pwmOutput.pause();
+  swTimer.enable(false);
+
+  // write(data, size) rather than print(): a string_view isn't guaranteed
+  // to be NUL-terminated.
+  Serial.print("PANIC: ");
+  Serial.write(title.data(), title.size());
+  Serial.print(": ");
+  Serial.write(detail.data(), detail.size());
+  Serial.println();
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setFont(&fonts::Font4);
+  tft.setTextPadding(0);
+  tft.setTextColor(TFT_RED, TFT_BLACK);
+  tft.setTextDatum(TC_DATUM);
+  drawString(tft, title, tft.width() / 2, 40);
+  tft.setFont(&fonts::Font2);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  drawString(tft, detail, tft.width() / 2, 100);
+  tft.drawString("Press knob to reboot", tft.width() / 2, 180);
+
+  twist.setColor(255, 0, 0);
+
+  // Polled directly (SysTick still runs, so delay()/millis() work): the
+  // scheduler that normally drives EncoderTask is gone. The press that
+  // triggered this (e.g. an unhandled Press event) may still be held, and
+  // the Twist's firmware keeps reporting a held button as pressed (see
+  // EncoderTask), so first wait until it's been released for 200ms - else
+  // that same press would reboot straight away, before the screen can be
+  // read.
+  uint32_t releasedSince = millis();
+  while (millis() - releasedSince < 200) {
+    if (twist.isPressed()) {
+      releasedSince = millis();
+    }
+    delay(10);
+  }
+  while (!twist.isPressed()) {
+    delay(10);
+  }
+
+  NVIC_SystemReset();
+}
 
 // Runs whenever a full scheduler pass finds no task with work. yield() is
 // a no-op on this build (USBCON, not TinyUSB - USB is interrupt-driven and
@@ -306,7 +418,10 @@ void setup() {
   tft.setTextPadding(TemperatureDisplay::NUMBER_PADDING); // shared with TemperatureDisplay's suffix positioning - see its header
 
   pwmOutput.begin();
-  pwmOutput.onCounterChanged(0); // defined-off PWM state from boot, matching setpoint/temperatureController's initial off state
+  pwmOutput.onCounterChanged(0); // defined-off PWM state from boot, matching stationFsm's initial Off state
+  // Before anything can post events to it: the scheduler (and with it every
+  // producer - buttons, encoder, measurement cycle) only starts in loop().
+  stationFsm.start();
   setpointDisplay.begin(); // draws the static degree-C suffix once
 
   analogReadResolution(12); // 0..4095 instead of the default 10-bit 0..1023
@@ -340,6 +455,8 @@ void setup() {
   scheduler.add_task(adcSampleTask);
   scheduler.add_task(telemetryTask);
   scheduler.add_task(temperatureDisplayTask);
+  scheduler.add_task(faultTemperatureDisplayTask);
+  scheduler.add_task(screenManager);
   scheduler.set_idle_callback(idleCallback);
 
   // Short startup beep, last in setup() so it also signals that init
