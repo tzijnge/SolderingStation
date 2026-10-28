@@ -1,14 +1,14 @@
 ---
 name: commit-issue
-description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, stages the work as one self-contained commit (split only when the user asks, and only into commits that each build and pass tests), gets each message from the commit-message agent, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
+description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, stages the work as one self-contained commit (split only when the user asks, and only into commits that each build and pass tests), writes the message per docs/commit-messages.md, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
 argument-hint: <issue number>
 ---
 
 # Commit work for an issue
 
-Commits the uncommitted work in this repo (tzijnge/SolderingStation) for one GitHub issue onto that issue's branch. You run this in the main session because it needs the conversation's context: what was tested, which values are deliberate, what belongs together. Commit messages come from the `commit-message` agent (`.claude/agents/commit-message.md`); this skill owns everything around them.
+Commits the uncommitted work in this repo (tzijnge/SolderingStation) for one GitHub issue onto that issue's branch. You run this in the main session because it needs the conversation's context: what was tested, which values are deliberate, what belongs together. You also write the commit messages yourself, in the format of `docs/commit-messages.md`.
 
-Read `docs/workflow.md` first: it holds the conventions (branch naming, commit format, board) this skill follows. Prefix `gh` commands with `export PATH="$PATH:/c/Program Files/GitHub CLI";`. Normally the branch already exists from `/start-issue`; step 2 covers the cases where it doesn't.
+Read `docs/workflow.md` and `docs/commit-messages.md` first: they hold the conventions (branch naming, board, commit message format) this skill follows. Prefix `gh` commands with `export PATH="$PATH:/c/Program Files/GitHub CLI";`. Normally the branch already exists from `/start-issue`; step 2 covers the cases where it doesn't.
 
 ## 1. Identify the issue
 
@@ -48,13 +48,10 @@ When the user asks for a split: propose commits that each build and pass the tes
 
 ## 6. Message per commit
 
-Run the `commit-message` agent in the foreground for each staged commit. Its prompt must include:
-- the issue number;
-- the commit's topic, e.g. "topic: image tooling" - the agent ends the subject with it;
-- "describe only the staged changes";
-- context not visible in the diff: what was tested on hardware and what not, which values are deliberate, what earlier commits already covered.
-
-Check the returned message against the code before using it - fix factual errors yourself (e.g. a wrong value), don't pass them on.
+Write the message yourself, per `docs/commit-messages.md`:
+- Read the staged diff (`git diff --cached`) and describe exactly that - not what the conversation intended. The conversation adds what the diff can't show: what was tested on hardware and what not (untested parts get a `NOTE:` bullet), which values are deliberate, why.
+- Subject: the issue's exact GitHub title (step 1) and the commit's topic (step 4).
+- Check it against the rules before showing it: subject at most 72 characters, blank line 2, one line per bullet, no closing keyword before `#<n>`.
 
 ## 7. User review - always, for every commit
 

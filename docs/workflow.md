@@ -6,7 +6,7 @@ How work on this project goes from a GitHub issue to `main`. Each phase has a Cl
 |---|---|---|
 | Start | `/start-issue <n>` | Branch from an up-to-date `main`, issue to *In Progress* on the board, short plan for approval |
 | Work | (normal conversation) | Implement, you build and test on the device |
-| Commit | `/commit-issue <n>` | Checks, one self-contained commit with a message from the `commit-message` agent, pushed after your review; the first one opens a draft PR |
+| Commit | `/commit-issue <n>` | Checks, one self-contained commit with a message written by Claude, pushed after your review; the first one opens a draft PR |
 | Finish | `/finish-issue <n>` | Confirm hardware tests, write the final PR title and description; after you've merged it: clean up |
 
 An issue normally gets several commits, and work on an issue can go back and forth between *Work* and *Commit* several times before it's finished.
@@ -30,7 +30,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 
 ### Commits
 
-- Format: `#<n> <issue title>: <topic>`, a blank line, then a `* ` bullet list. Messages are written by the `commit-message` agent (`.claude/agents/commit-message.md`), which owns the details of the format.
+- Format: `#<n> <issue title>: <topic>`, a blank line, then a `* ` bullet list. Claude writes the messages in `/commit-issue`; the details of the format are in `docs/commit-messages.md`.
 - Every commit is self-contained: CI must be able to build and test it successfully. So the uncommitted work normally becomes one commit, whatever subjects it touches; it's only split when you ask (because it's too big), and then only into commits that each build and pass the tests.
 - Nothing is committed without your review: Claude stages each commit, shows its file list and message, and waits for your OK before committing. The staged changes are exactly that commit, so you can view its diff in your own diff viewer first.
 - Every commit is pushed right after it's made, so it's never amended or force-pushed.
@@ -38,7 +38,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 ### Pull requests
 
 - Merged with **Squash and merge**: `main` gets one commit per issue, and its message is the PR's title and description. The topic commits stay visible in the closed PR.
-- So the PR title and description *are* the final commit message, with the same structure as the topic commits. The `commit-message` agent writes the PR description, Claude checks it and creates the PR as a GitHub **draft PR**. You review it, mark it *Ready for review* and merge it with *Squash and merge*:
+- So the PR title and description *are* the final commit message, with the same structure as the topic commits. The `pr-description` agent writes the PR description (format in `docs/commit-messages.md`), Claude checks it and creates the PR as a GitHub **draft PR**. You review it, mark it *Ready for review* and merge it with *Squash and merge*:
   - Title: `#<n> <issue title>` (no topic: it covers the whole issue).
   - Description: the bullets of the issue's topic commits with the irrelevant ones removed, then `Closes #<n>`:
 
@@ -49,7 +49,7 @@ An issue normally gets several commits, and work on an issue can go back and for
     Closes #<n>
     ```
 
-    Irrelevant are: fixes for QA or review comments, build fixes and typo fixes; added tests; anything reverted, superseded or made redundant by a later commit on the branch (only the end result counts); notes that no longer hold at the end of the branch (e.g. "not yet tested" when it was tested later); pure housekeeping (formatting, line endings, comment rewording). Duplicates are merged into one bullet. "Also:" items and still-true "NOTE:" items stay.
+    Which commit bullets are irrelevant is listed in `docs/commit-messages.md` (in short: fixes, tests, anything superseded, stale notes, housekeeping; "Also:" items and still-true "NOTE:" items stay).
   - The repository must use the PR title and description as the squash commit message: Settings → General → Pull Requests → squash merging → "Default to pull request title and description".
 - The draft PR is opened right after the issue's first commit, without reviewers and with a placeholder description (plus `Closes #<n>`), so CI runs on every push while work continues. The real title and description are only written after the hardware tests are confirmed. The test record isn't part of the description, since that ends up on `main`.
 - After the merge: switch to the updated `main`, delete the local issue branch, and check that the issue is closed and *Done* on the board.
