@@ -1,6 +1,6 @@
 ---
 name: commit-issue
-description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, proposes how to divide the work into topic commits, stages them, gets each message from the commit-message agent and commits. Never pushes. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
+description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, proposes how to divide the work into topic commits, stages them, gets each message from the commit-message agent, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
 argument-hint: <issue number>
 ---
 
@@ -59,17 +59,36 @@ Check the returned message against the code before using it - fix factual errors
 ## 7. User review - always, for every commit
 
 Never commit without the user's explicit OK for that commit - no exceptions, also not for small tooling or docs commits. With the commit staged and its message checked:
-- show the user `git diff --cached --stat` and the proposed message (in a code block);
-- ask them to review the staged changes (e.g. VS Code's Source Control view, "Staged Changes") and the message, then wait;
+- show the user `git diff --cached --stat` and the proposed message (in a code block) - not the full diff;
+- tell them the commit is staged so they can view its diff in their own diff viewer (the index holds exactly this commit, also for intermediate versions from step 5), and ask for their OK on the changes and the message, then wait. Viewing the diff is their choice; the OK is not optional;
 - if they want changes: make them, re-stage, regenerate or adjust the message if needed, and ask again.
 Only an OK given after seeing this commit's staged changes counts. When several commits are planned, review them one at a time.
 
 ## 8. Commit
 
-After the OK: write the message to a file in the scratchpad, append a blank line and the `Co-Authored-By` trailer from the session's attribution instructions, and `git commit -F <file>`. Never use `--no-verify`, `--amend` on pushed commits, or force options.
+After the OK: write the message to a file in the scratchpad, append a blank line and the `Co-Authored-By` trailer from the session's attribution instructions, and `git commit -F <file>`. Never use `--no-verify`, `--amend` (every commit gets pushed), or force options.
 
-## 9. Finish
+## 9. Push
 
-- `git status --short` must be clean (or only show what the user chose to leave out), and `git log --oneline main..HEAD` lists the new commits.
-- Never push unless the user asks. The PR (created by `/finish-issue`) closes the issue - so no closing keywords (`Closes #n`) in commits.
-- Report the commits (hash, subject, topic) and anything not verified, e.g. intermediate commits not built on their own.
+Right after each commit, before staging the next one: `git push -u origin '<branch>'`. If the push is rejected (origin has commits this branch doesn't), stop and ask - never force-push.
+
+## 10. Draft PR
+
+After the first push of a branch, check for a PR: `gh pr list -R tzijnge/SolderingStation --head '<branch>' --state open --json number,url,isDraft`. If there is none, open one as a draft, without reviewers, so CI runs on every following push:
+- title `#<n> <issue title>` (per `docs/workflow.md`);
+- a placeholder description in the scratchpad - the real one is written by `/finish-issue`:
+
+  ```
+  Work in progress - the description follows when the issue is finished.
+
+  Closes #<n>
+  ```
+- `gh pr create -R tzijnge/SolderingStation --draft --base main --head '<branch>' --title '<title>' --body-file <file>`.
+
+If an open PR exists, leave it alone; if it isn't a draft any more, mention that (the user may have marked it ready too early).
+
+## 11. Finish
+
+- `git status --short` must be clean (or only show what the user chose to leave out), `git log --oneline main..HEAD` lists the new commits, and `git status -sb` shows the branch in sync with origin.
+- The PR closes the issue - so no closing keywords (`Closes #n`) in commits.
+- Report the commits (hash, subject, topic), the PR link, and anything not verified, e.g. intermediate commits not built on their own.

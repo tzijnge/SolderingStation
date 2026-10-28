@@ -6,8 +6,8 @@ How work on this project goes from a GitHub issue to `main`. Each phase has a Cl
 |---|---|---|
 | Start | `/start-issue <n>` | Branch from an up-to-date `main`, issue to *In Progress* on the board, short plan for approval |
 | Work | (normal conversation) | Implement, you build and test on the device |
-| Commit | `/commit-issue <n>` | Checks, topic commits with messages from the `commit-message` agent |
-| Finish | `/finish-issue <n>` | Confirm hardware tests, push, create a draft PR; after you've merged it: clean up |
+| Commit | `/commit-issue <n>` | Checks, topic commits with messages from the `commit-message` agent, each pushed after your review; the first one opens a draft PR |
+| Finish | `/finish-issue <n>` | Confirm hardware tests, write the final PR title and description; after you've merged it: clean up |
 
 An issue normally gets several commits, and work on an issue can go back and forth between *Work* and *Commit* several times before it's finished.
 
@@ -32,8 +32,8 @@ An issue normally gets several commits, and work on an issue can go back and for
 
 - Format: `#<n> <issue title>: <topic>`, a blank line, then a `* ` bullet list. Messages are written by the `commit-message` agent (`.claude/agents/commit-message.md`), which owns the details of the format.
 - Each commit covers one topic; work that spans topics becomes several commits.
-- Nothing is committed without your review: Claude stages each commit, shows its changes and message, and waits for your OK before committing.
-- Nothing is pushed without being asked.
+- Nothing is committed without your review: Claude stages each commit, shows its file list and message, and waits for your OK before committing. The staged changes are exactly that commit, so you can view its diff in your own diff viewer first.
+- Every commit is pushed right after it's made, so it's never amended or force-pushed.
 
 ### Pull requests
 
@@ -51,7 +51,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 
     Irrelevant are: fixes for QA or review comments, build fixes and typo fixes; added tests; anything reverted, superseded or made redundant by a later commit on the branch (only the end result counts); notes that no longer hold at the end of the branch (e.g. "not yet tested" when it was tested later); pure housekeeping (formatting, line endings, comment rewording). Duplicates are merged into one bullet. "Also:" items and still-true "NOTE:" items stay.
   - The repository must use the PR title and description as the squash commit message: Settings → General → Pull Requests → squash merging → "Default to pull request title and description".
-- A PR is only drafted after the hardware tests are confirmed. The test record isn't part of the description, since that ends up on `main`.
+- The draft PR is opened right after the issue's first commit, without reviewers and with a placeholder description (plus `Closes #<n>`), so CI runs on every push while work continues. The real title and description are only written after the hardware tests are confirmed. The test record isn't part of the description, since that ends up on `main`.
 - After the merge: switch to the updated `main`, delete the local issue branch, and check that the issue is closed and *Done* on the board.
 
 ## Tool notes
