@@ -6,7 +6,7 @@ How work on this project goes from a GitHub issue to `main`. Each phase has a Cl
 |---|---|---|
 | Start | `/start-issue <n>` | Branch from an up-to-date `main`, issue to *In Progress* on the board, short plan for approval |
 | Work | (normal conversation) | Implement, you build and test on the device |
-| Commit | `/commit-issue <n>` | Checks, topic commits with messages from the `commit-message` agent, each pushed after your review; the first one opens a draft PR |
+| Commit | `/commit-issue <n>` | Checks, one self-contained commit with a message from the `commit-message` agent, pushed after your review; the first one opens a draft PR |
 | Finish | `/finish-issue <n>` | Confirm hardware tests, write the final PR title and description; after you've merged it: clean up |
 
 An issue normally gets several commits, and work on an issue can go back and forth between *Work* and *Commit* several times before it's finished.
@@ -31,7 +31,7 @@ An issue normally gets several commits, and work on an issue can go back and for
 ### Commits
 
 - Format: `#<n> <issue title>: <topic>`, a blank line, then a `* ` bullet list. Messages are written by the `commit-message` agent (`.claude/agents/commit-message.md`), which owns the details of the format.
-- Each commit covers one topic; work that spans topics becomes several commits.
+- Every commit is self-contained: CI must be able to build and test it successfully. So the uncommitted work normally becomes one commit, whatever subjects it touches; it's only split when you ask (because it's too big), and then only into commits that each build and pass the tests.
 - Nothing is committed without your review: Claude stages each commit, shows its file list and message, and waits for your OK before committing. The staged changes are exactly that commit, so you can view its diff in your own diff viewer first.
 - Every commit is pushed right after it's made, so it's never amended or force-pushed.
 

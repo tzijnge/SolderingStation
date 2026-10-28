@@ -78,5 +78,4 @@ For a PR description, return the title (line 1) and the description (everything 
 
 Return the commit message in a fenced code block, nothing inside the block but the message. After the block, at most a few lines of notes to the caller, only if relevant:
 - what you described (staged vs all uncommitted changes);
-- if the changes cover several unrelated topics, suggest how to divide them over separate commits (which files go together) - but still write the single message;
 - anything you were unsure about (missing issue number, shortened title, suspected test leftovers).

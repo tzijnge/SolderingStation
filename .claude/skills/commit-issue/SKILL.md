@@ -1,6 +1,6 @@
 ---
 name: commit-issue
-description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, proposes how to divide the work into topic commits, stages them, gets each message from the commit-message agent, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
+description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, stages the work as one self-contained commit (split only when the user asks, and only into commits that each build and pass tests), gets each message from the commit-message agent, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
 argument-hint: <issue number>
 ---
 
@@ -32,16 +32,16 @@ Fix or ask about each of these before proposing commits:
 - **Stray files**: untracked files that don't belong in the repo (scratch output, local config). Ask before including anything unclear.
 - **Build/test status**: note from the conversation what the user built and tested on hardware and what not - the messages need it (step 6).
 
-## 4. Propose the commits
+## 4. One commit, unless the user asks for a split
 
-Group the changes into topic commits - the issue's own feature, plus separate commits for groundwork it needs (toolchain, refactoring), tooling, docs or notes that stand on their own. Order them so each commit only depends on earlier ones; ideally every commit builds. One commit is fine when the work is one topic.
+By default all uncommitted work becomes one commit: every commit must be self-contained, i.e. CI must be able to build and test it successfully, and splitting source changes into separate subjects rarely gives commits that each build. Don't propose a split on your own; the user asks for one when they find the work too big. Give the commit a topic (two to five words) covering the work as a whole, and go to step 5.
 
-Show the user a table (number, topic, files - noting files that span topics) and wait for approval before staging anything.
+When the user asks for a split: propose commits that each build and pass the tests on their own, even if that makes the topics less clean (e.g. a refactoring together with the code that needs it). Order them so each commit only depends on earlier ones. Show a table (number, topic, files - noting files that span commits) and wait for approval before staging anything.
 
-## 5. Stage each commit
+## 5. Stage the commit
 
-- Whole files: `git add <paths>`.
-- A file that spans topics: build the intermediate version for the earlier commit (e.g. the committed version plus only that topic's hunks) in the scratchpad, then put it in the index without touching the working tree:
+- Whole files: `git add <paths>` (normally all changes: `git add -A`, after the checks of step 3).
+- Only for a requested split, a file that spans commits: build the intermediate version for the earlier commit (e.g. the committed version plus only that topic's hunks) in the scratchpad, then put it in the index without touching the working tree:
   `git update-index --cacheinfo 100644,$(git hash-object -w <file>),<path>`
   (interactive `git add -p` is not available). Check the intermediate version: the final version must equal it plus the later topics' changes.
 - Before each commit, check `git diff --cached --stat` (and the diff for intermediate versions) contains exactly the planned changes.
@@ -51,7 +51,7 @@ Show the user a table (number, topic, files - noting files that span topics) and
 Run the `commit-message` agent in the foreground for each staged commit. Its prompt must include:
 - the issue number;
 - the commit's topic, e.g. "topic: image tooling" - the agent ends the subject with it;
-- "describe only the staged changes; skip the suggestion on dividing them";
+- "describe only the staged changes";
 - context not visible in the diff: what was tested on hardware and what not, which values are deliberate, what earlier commits already covered.
 
 Check the returned message against the code before using it - fix factual errors yourself (e.g. a wrong value), don't pass them on.
@@ -91,4 +91,4 @@ If an open PR exists, leave it alone; if it isn't a draft any more, mention that
 
 - `git status --short` must be clean (or only show what the user chose to leave out), `git log --oneline main..HEAD` lists the new commits, and `git status -sb` shows the branch in sync with origin.
 - The PR closes the issue - so no closing keywords (`Closes #n`) in commits.
-- Report the commits (hash, subject, topic), the PR link, and anything not verified, e.g. intermediate commits not built on their own.
+- Report the commits (hash, subject, topic), the PR link, and anything not verified, e.g. intermediate commits of a split not built on their own (Claude doesn't run `pio`; until CI exists, only the user's build of the final state is verified).
