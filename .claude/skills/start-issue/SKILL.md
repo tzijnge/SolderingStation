@@ -33,7 +33,7 @@ Move the issue to *In Progress* on project 2 (owner tzijnge):
 
 ## 5. The plan
 
-Before writing any code, re-read the issue against the current code (it may have been written before recent changes) and present a short plan:
+Before writing any code, re-read the issue against the current code (it may have been written before recent changes) and present a comprehensive plan:
 - what changes, by file or component, in a few bullets;
 - anything in the issue that's outdated or no longer fits the code;
 - open decisions, as concrete questions with a recommendation each;
