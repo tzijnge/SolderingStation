@@ -1,5 +1,6 @@
 #pragma once
 
+#include <etl/delegate.h>
 #include <etl/fsm.h>
 #include <etl/string.h>
 #include <etl/string_stream.h>
@@ -18,6 +19,10 @@
 // ignored, so turning the knob can't switch the heater back on. A fault
 // always lands in Off after acknowledgement, never straight back in On -
 // heating again takes a deliberate second press.
+//
+// Entering Fault calls onFaultLatched_ (two beeps, in main.cpp) - while
+// soldering the user is likely watching the joint, not the screen, so a
+// fault must be audible too.
 //
 // Future states (standby #16, the settings menu #12) slot in here as more
 // etl::fsm_state types - the menu likely as a sub-state via etl::hfsm, since
@@ -89,6 +94,7 @@ public:
   etl::fsm_state_id_t on_event(const Press &event);
   etl::fsm_state_id_t on_event(const FaultDetected &event);
   etl::fsm_state_id_t on_event_unknown(const etl::imessage &event) { unhandledEvent(StateId::Fault, event); }
+  etl::fsm_state_id_t on_enter_state() override;
   void on_exit_state() override;
 };
 
@@ -96,8 +102,11 @@ public:
 
 class StationFsm : public etl::fsm {
 public:
-  StationFsm(TemperatureSetpoint &setpoint_, const SafetyMonitor &safetyMonitor_)
-      : etl::fsm(ROUTER_ID), setpoint(setpoint_), safetyMonitor(safetyMonitor_) {
+  // onFaultLatched_ is a non-owning etl::delegate: its callable must be a
+  // named object with program lifetime (see NotifyTask).
+  StationFsm(TemperatureSetpoint &setpoint_, const SafetyMonitor &safetyMonitor_,
+             etl::delegate<void(void)> onFaultLatched_)
+      : etl::fsm(ROUTER_ID), setpoint(setpoint_), safetyMonitor(safetyMonitor_), onFaultLatched(onFaultLatched_) {
     set_states(states);
   }
 
@@ -120,6 +129,7 @@ private:
 
   TemperatureSetpoint &setpoint;
   const SafetyMonitor &safetyMonitor;
+  etl::delegate<void(void)> onFaultLatched;
   SafetyMonitor::Fault latchedFault = SafetyMonitor::Fault::None;
 };
 
@@ -165,6 +175,13 @@ inline etl::fsm_state_id_t Fault::on_event(const Press &) {
 // The first fault wins, so the display keeps showing the original cause
 // rather than whatever followed from it.
 inline etl::fsm_state_id_t Fault::on_event(const FaultDetected &) { return No_State_Change; }
+
+// Only reached from Off/On on a FaultDetected, so it runs once per latched
+// fault, never for the repeats Fault itself ignores.
+inline etl::fsm_state_id_t Fault::on_enter_state() {
+  get_fsm_context().onFaultLatched();
+  return No_State_Change;
+}
 
 inline void Fault::on_exit_state() { get_fsm_context().latchedFault = SafetyMonitor::Fault::None; }
 
