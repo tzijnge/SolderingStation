@@ -39,4 +39,6 @@ Before writing any code, re-read the issue against the current code (it may have
 - open decisions, as concrete questions with a recommendation each;
 - what will need testing on the device.
 
+Draft the plan yourself - you need the code in your own context to implement it anyway. For safety-critical issues (label `safety`) or cross-cutting ones, or when the user asks, first have the Plan agent review the draft against the issue and the code, and fold its valid points into the plan you present.
+
 Wait for the user's OK (or changes) before writing code. Then implement, following the project's standing rules (memory notes: C++ style, state-diagram updates, manual builds).
