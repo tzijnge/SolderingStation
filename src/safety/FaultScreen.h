@@ -78,6 +78,12 @@ private:
     case SafetyMonitor::Fault::OverTemperature:
       stream << "Tip above " << static_cast<int>(SafetyMonitor::OVER_TEMPERATURE_LIMIT_C) << "C limit";
       break;
+    case SafetyMonitor::Fault::ThermalRunaway:
+      stream << "Tip not heating up";
+      break;
+    case SafetyMonitor::Fault::HeaterSaturated:
+      stream << "Heater at full power too long";
+      break;
     default:
       // A fault without its own message yet - at least name it (the numeric
       // value too, in case faultName() doesn't know it either).
