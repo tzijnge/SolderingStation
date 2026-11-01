@@ -49,4 +49,4 @@ stateDiagram-v2
 | `Press` | Qwiic Twist push, middle button |
 | `FaultDetected(fault)` | `SafetyMonitor::check()` in the 100 ms measurement cycle, posted every cycle the condition is present |
 
-**Fault sources** (`SafetyMonitor::Fault`): `OverTemperature` (tip above 450 °C), `ThermalRunaway` (duty ≥ 200 for 3 s while below 150 °C, without rising 20 °C), `HeaterSaturated` (duty ≥ 200 for 30 s without a break). Entering Fault beeps twice, since while soldering the user is likely not watching the screen.
+**Fault sources** (`SafetyMonitor::Fault`): `OverTemperature` (tip above 450 °C), `ThermalRunaway` (duty ≥ 200 for 3 s while below 150 °C, without rising 20 °C), `HeaterSaturated` (duty ≥ 200 for 15 s without a break). Entering Fault beeps twice, since while soldering the user is likely not watching the screen.

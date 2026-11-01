@@ -120,9 +120,12 @@ private:
   // From temperature and duty alone that looks exactly like soldering a
   // large ground plane (full power, reading flat or slowly falling), so
   // this check only trips once the heater has been at RUNAWAY_DUTY_MIN or
-  // above for SATURATED_CYCLES without a single cycle below it - far longer
-  // than a heat-up from cold at full power (~6s to 430C) and, hopefully,
-  // than real soldering needs. A false trip only costs an acknowledgement.
+  // above for SATURATED_CYCLES without a single cycle below it. That's
+  // ~2.5x a heat-up from cold at full power (~6s to 430C), leaving room for a
+  // weaker supply or a cold room; real soldering doesn't come close
+  // (measured: duty peaks around 110 even desoldering a heatsink). Kept no
+  // longer than that, since the tip heats uncontrolled until it trips. A
+  // false trip only costs an acknowledgement.
   bool checkSaturated(uint8_t appliedDuty) {
     if (appliedDuty < RUNAWAY_DUTY_MIN) {
       saturatedCycles = 0;
@@ -139,7 +142,7 @@ private:
   static constexpr uint8_t RUNAWAY_WINDOW_CYCLES = 30; // 3s at the 100ms measurement cycle
   static constexpr float RUNAWAY_MIN_RISE_C = 20.0f;
   static constexpr float RUNAWAY_ARM_BELOW_C = 150.0f;
-  static constexpr uint16_t SATURATED_CYCLES = 300; // 30s at the 100ms measurement cycle
+  static constexpr uint16_t SATURATED_CYCLES = 150; // 15s at the 100ms measurement cycle
 
   Fault condition_ = Fault::None;
   uint8_t runawayCycles = 0;
