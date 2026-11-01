@@ -18,7 +18,8 @@
 // is reused for both the measured tip temperature and the user-set
 // temperature setpoint (see main.cpp), which is why the class and its
 // methods are named generically rather than "Tip...".
-class TemperatureDisplay {
+class TemperatureDisplay
+{
 public:
   // The fixed-width background-clear box main.cpp sets via
   // tft.setTextPadding(TemperatureDisplay::NUMBER_PADDING) - shared so
@@ -29,10 +30,16 @@ public:
   // Left: at the fixed left margin (the Main screen's two rows line up).
   // Center: the whole number + degree-C block centered on the screen (the
   // Fault screen) - computed in begin(), since it needs the font metrics.
-  enum class Alignment : uint8_t { Left, Center };
+  enum class Alignment : uint8_t
+  {
+    Left,
+    Center
+  };
 
   TemperatureDisplay(LGFX &tft_, int32_t y_, uint16_t color_, Alignment alignment_ = Alignment::Left)
-      : tft(tft_), y(y_), color(color_), alignment(alignment_) {}
+      : tft(tft_), y(y_), color(color_), alignment(alignment_)
+  {
+  }
 
   // Draws the degree-C suffix once. The degree mark is a small solid ring
   // (filled circle with a smaller filled circle punched out of the
@@ -50,8 +57,10 @@ public:
   //
   // Must be called again whenever the screen this is on has been cleared
   // (see ScreenManager) - the suffix is only ever drawn here.
-  void begin() {
-    if (alignment == Alignment::Center) {
+  void begin()
+  {
+    if (alignment == Alignment::Center)
+    {
       tft.setFont(&fonts::DejaVu72);
       int32_t width = NUMBER_PADDING + SUFFIX_OFFSET + tft.textWidth("C");
       left = (tft.width() - width) / 2;
@@ -76,7 +85,8 @@ public:
     tft.setFont(&fonts::Font7);
   }
 
-  void onTemperatureChanged(int16_t degreesC) {
+  void onTemperatureChanged(int16_t degreesC)
+  {
     etl::string<16> text;
     etl::to_string(degreesC, text);
 
@@ -87,7 +97,8 @@ public:
   // Placeholder for "no active setpoint" (station off) - font 7 only has
   // 0-9, ':', '-', '.' (no letters), so "OFF" isn't renderable; three dashes
   // is the closest equivalent within that character set.
-  void showOff() {
+  void showOff()
+  {
     tft.setTextColor(color, TFT_BLACK);
     drawRightAligned("---");
   }
@@ -105,7 +116,8 @@ private:
   // just with digits growing left instead of right as the value's width
   // changes. The degree-C suffix (begin(), above) doesn't move - it's
   // positioned off NUMBER_PADDING, not off the number's own alignment.
-  void drawRightAligned(etl::string_view text) {
+  void drawRightAligned(etl::string_view text)
+  {
     tft.setTextDatum(TR_DATUM);
     drawString(tft, text, left + NUMBER_PADDING, y);
   }

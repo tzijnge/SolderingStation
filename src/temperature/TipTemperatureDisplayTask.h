@@ -29,24 +29,30 @@
 // active. invalidate() forces a redraw - ScreenManager calls it after
 // switching to that screen, since the cleared panel no longer shows
 // lastDrawnValue.
-class TipTemperatureDisplayTask : public etl::task {
+class TipTemperatureDisplayTask : public etl::task
+{
 public:
   TipTemperatureDisplayTask(const TipTemperature &tipTemperature_, TemperatureDisplay &display_,
                             const ActiveScreen &activeScreen_, Screen screen_)
       : etl::task(TASK_PRIORITY_DISPLAY), tipTemperature(tipTemperature_), display(display_),
-        activeScreen(activeScreen_), screen(screen_) {}
+        activeScreen(activeScreen_), screen(screen_)
+  {
+  }
 
   void invalidate() { lastDrawnValue = INT16_MIN; }
 
-  uint32_t task_request_work() const override {
-    if (!activeScreen.is(screen)) {
+  uint32_t task_request_work() const override
+  {
+    if (!activeScreen.is(screen))
+    {
       return 0u;
     }
     float delta = tipTemperature.filteredValue() - lastDrawnValue;
     return (delta > HYSTERESIS_C || delta < -HYSTERESIS_C) ? 1u : 0u;
   }
 
-  void task_process_work() override {
+  void task_process_work() override
+  {
     // Rounded to nearest rather than truncated - a soldering iron tip is
     // never cold enough to need to worry about negative values here.
     lastDrawnValue = static_cast<int16_t>(tipTemperature.filteredValue() + 0.5f);

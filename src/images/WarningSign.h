@@ -9,7 +9,8 @@
 
 #include <LovyanGFX.hpp>
 
-namespace WarningSign {
+namespace WarningSign
+{
 
 inline constexpr int32_t WIDTH = 104;
 inline constexpr int32_t HEIGHT = 94;
@@ -17,6 +18,9 @@ inline constexpr int32_t HEIGHT = 94;
 // 16-colour palette image: each pixel is a 4-bit index into PALETTE.
 inline constexpr lgfx::color_depth_t DEPTH = lgfx::palette_4bit;
 
+// The data tables keep their generated layout (rows of fixed width) rather
+// than the repo's .clang-format style.
+// clang-format off
 inline constexpr std::array<lgfx::rgb565_t, 16> PALETTE{{
     0xFFFF, 0xFF1C, 0xF5F7, 0xFC92, 0xA534, 0xFA69, 0xF8A2, 0x4228,
     0xF800, 0xE800, 0xC800, 0xB000, 0x8000, 0x5000, 0x1000, 0x0000,
@@ -331,9 +335,11 @@ inline constexpr std::array<uint8_t, 4888> PIXELS{{
     0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88,
     0x8A, 0xAC, 0xDF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 }};
+// clang-format on
 
 // Draws the image with its top-left corner at (x, y).
-inline void draw(LGFX &tft, int32_t x, int32_t y) {
+inline void draw(LGFX &tft, int32_t x, int32_t y)
+{
   tft.pushImage(x, y, WIDTH, HEIGHT, PIXELS.data(), DEPTH, PALETTE.data());
 }
 

@@ -13,9 +13,11 @@
 // diffSteps() is called (via StationFsm) for producers (EncoderTask, button
 // NotifyTasks) that don't know the current value, its clamp, or the step
 // size - they just report "N steps", same shape as the old Counter::diff().
-class TemperatureSetpoint {
+class TemperatureSetpoint
+{
 public:
-  void diffSteps(int16_t steps) {
+  void diffSteps(int16_t steps)
+  {
     int32_t next = static_cast<int32_t>(value_) + steps * STEP_SIZE;
     value_ = static_cast<int16_t>((next < MIN) ? MIN : (next > MAX) ? MAX : next);
   }

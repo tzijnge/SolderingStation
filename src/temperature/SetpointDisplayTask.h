@@ -17,30 +17,39 @@
 //
 // Part of the Main screen: only draws while it's active. invalidate() forces
 // a redraw - ScreenManager calls it after switching back to Main.
-class SetpointDisplayTask : public etl::task {
+class SetpointDisplayTask : public etl::task
+{
 public:
   SetpointDisplayTask(const TemperatureSetpoint &setpoint_, const StationFsm &station_, TemperatureDisplay &display_,
                       const ActiveScreen &activeScreen_)
       : etl::task(TASK_PRIORITY_DISPLAY), setpoint(setpoint_), station(station_), display(display_),
-        activeScreen(activeScreen_) {}
+        activeScreen(activeScreen_)
+  {
+  }
 
   // The setpoint can never be INT16_MIN (clamped to 50..430), so this
   // always differs from the next value polled.
   void invalidate() { lastDrawnValue = INT16_MIN; }
 
-  uint32_t task_request_work() const override {
-    if (!activeScreen.is(Screen::Main)) {
+  uint32_t task_request_work() const override
+  {
+    if (!activeScreen.is(Screen::Main))
+    {
       return 0u;
     }
     return (station.isOn() != lastOn || setpoint.value() != lastDrawnValue) ? 1u : 0u;
   }
 
-  void task_process_work() override {
+  void task_process_work() override
+  {
     lastOn = station.isOn();
     lastDrawnValue = setpoint.value();
-    if (lastOn) {
+    if (lastOn)
+    {
       display.onTemperatureChanged(lastDrawnValue);
-    } else {
+    }
+    else
+    {
       display.showOff();
     }
   }

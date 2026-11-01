@@ -22,12 +22,16 @@
 //
 // show() draws the static parts onto a cleared panel; only the temperature
 // changes afterwards.
-class FaultScreen {
+class FaultScreen
+{
 public:
   FaultScreen(LGFX &tft_, TemperatureDisplay &tipDisplay_, TipTemperatureDisplayTask &tipTask_)
-      : tft(tft_), tipDisplay(tipDisplay_), tipTask(tipTask_) {}
+      : tft(tft_), tipDisplay(tipDisplay_), tipTask(tipTask_)
+  {
+  }
 
-  void show(SafetyMonitor::Fault fault) {
+  void show(SafetyMonitor::Fault fault)
+  {
     tft.setTextPadding(0);
     tft.setTextDatum(TC_DATUM);
 
@@ -36,7 +40,8 @@ public:
     // Font4 (26px) normally; falls back to Font2 (16px) for a message too
     // long to fit the screen width in Font4.
     tft.setFont(&fonts::Font4);
-    if (tft.textWidth(message.c_str()) > tft.width() - 2 * SIDE_MARGIN) {
+    if (tft.textWidth(message.c_str()) > tft.width() - 2 * SIDE_MARGIN)
+    {
       tft.setFont(&fonts::Font2);
     }
     drawString(tft, message, tft.width() / 2, MESSAGE_Y);
@@ -71,12 +76,20 @@ private:
   // in whole degrees (it's a float only for the comparison); "C" rather than
   // a degree sign, since the fonts used here are plain ASCII. No "FAULT"
   // prefix - the warning sign says that.
-  static etl::string<40> faultText(SafetyMonitor::Fault fault) {
+  static etl::string<40> faultText(SafetyMonitor::Fault fault)
+  {
     etl::string<40> text;
     etl::string_stream stream(text);
-    switch (fault) {
+    switch (fault)
+    {
     case SafetyMonitor::Fault::OverTemperature:
       stream << "Tip above " << static_cast<int>(SafetyMonitor::OVER_TEMPERATURE_LIMIT_C) << "C limit";
+      break;
+    case SafetyMonitor::Fault::ThermalRunaway:
+      stream << "Tip not heating up";
+      break;
+    case SafetyMonitor::Fault::HeaterSaturated:
+      stream << "Heater at full power too long";
       break;
     default:
       // A fault without its own message yet - at least name it (the numeric

@@ -33,18 +33,22 @@
 // (heater wattage, thermal mass, sensor lag), so there's no way to pick
 // correct values without on-device tuning (see main.cpp for the starting
 // values and tuning notes).
-class TemperatureController {
+class TemperatureController
+{
 public:
   TemperatureController(TemperatureSetpoint &setpoint_, double kp, double ki, double kd)
       : setpoint(setpoint_), boostBandC(255.0 / kp + BOOST_BAND_MARGIN_C),
-        pid(&input, &output, &setpointValue, kp, ki, kd, DIRECT) {
+        pid(&input, &output, &setpointValue, kp, ki, kd, DIRECT)
+  {
     pid.SetOutputLimits(0, 255);
     pid.SetSampleTime(100);
     pid.SetMode(MANUAL); // starts off, matching StationFsm's initial Off state
   }
 
-  uint8_t compute(float measuredTempC, bool heaterOn) {
-    if (!heaterOn) {
+  uint8_t compute(float measuredTempC, bool heaterOn)
+  {
+    if (!heaterOn)
+    {
       output = 0;
       pid.SetMode(MANUAL);
       return 0;
@@ -55,13 +59,15 @@ public:
     setpointValue = setpoint.value();
     input = measuredTempC;
 
-    if (setpointValue - input > boostBandC) {
+    if (setpointValue - input > boostBandC)
+    {
       output = 255;
       pid.SetMode(MANUAL);
       return 255;
     }
 
-    if (pid.GetMode() == MANUAL) {
+    if (pid.GetMode() == MANUAL)
+    {
       output = 0; // seeds outputSum (the integral) with 0 in Initialize()
       pid.SetMode(AUTOMATIC);
     }

@@ -14,9 +14,11 @@
 // the display inline - onAdcSample() runs as part of the ADC measurement
 // cycle in main.cpp, and that cycle needs to stay fast and predictable
 // (PWM resumes right after it) regardless of how long a redraw takes.
-class TipTemperature {
+class TipTemperature
+{
 public:
-  void onAdcSample(uint16_t rawAdc) {
+  void onAdcSample(uint16_t rawAdc)
+  {
     // Calibrated against an FG-100 tip thermometer (room temperature ~17C),
     // 10 points from room temperature to 454C: cubic least-squares fit of
     // FG-100 reading vs raw ADC, residuals within +/-3C (mostly +/-1C).

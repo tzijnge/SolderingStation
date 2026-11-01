@@ -8,17 +8,20 @@
 // registration. begin() must be called from setup() (not the constructor)
 // since pinMode() needs the Arduino core to have run its own init() first,
 // which hasn't happened yet at global static-init time.
-class CounterPwmOutput {
+class CounterPwmOutput
+{
 public:
   explicit CounterPwmOutput(uint32_t pin_) : pin(pin_) {}
 
   void begin() { pinMode(pin, OUTPUT); }
 
-  void onCounterChanged(uint8_t value) {
+  void onCounterChanged(uint8_t value)
+  {
     lastValue = value;
     // Suppressed while paused so a counter change mid-measurement can't
     // sneak the output back on before resume() - see pause()/resume().
-    if (!paused) {
+    if (!paused)
+    {
       analogWrite(pin, value);
     }
   }
@@ -26,7 +29,8 @@ public:
   // Temporarily forces the output off (without forgetting the last real
   // value) so resume() can restore it - used to quiet PWM switching noise
   // during a tip-temperature ADC measurement (see main.cpp).
-  void pause() {
+  void pause()
+  {
     paused = true;
     analogWrite(pin, 0);
   }
@@ -46,11 +50,13 @@ public:
   // hardware command for an immediate counter reset. If this class is
   // ever reused for a different pin, this would need to target whichever
   // TC/TCC that pin actually uses instead.
-  void resume() {
+  void resume()
+  {
     paused = false;
     analogWrite(pin, lastValue);
 
-    while (TC1->COUNT8.SYNCBUSY.bit.CTRLB) {
+    while (TC1->COUNT8.SYNCBUSY.bit.CTRLB)
+    {
     }
     TC1->COUNT8.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
   }
