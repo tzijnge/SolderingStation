@@ -115,7 +115,8 @@ def main() -> None:
 
 #include <LovyanGFX.hpp>
 
-namespace {args.name} {{
+namespace {args.name}
+{{
 
 inline constexpr int32_t WIDTH = {width};
 inline constexpr int32_t HEIGHT = {height};
@@ -123,6 +124,9 @@ inline constexpr int32_t HEIGHT = {height};
 // {colours}-colour palette image: each pixel is a {args.bits}-bit index into PALETTE.
 inline constexpr lgfx::color_depth_t DEPTH = lgfx::palette_{args.bits}bit;
 
+// The data tables keep their generated layout (rows of fixed width) rather
+// than the repo's .clang-format style.
+// clang-format off
 inline constexpr std::array<lgfx::rgb565_t, {colours}> PALETTE{{{{
 {palette_values}
 }}}};
@@ -131,9 +135,11 @@ inline constexpr std::array<lgfx::rgb565_t, {colours}> PALETTE{{{{
 inline constexpr std::array<uint8_t, {len(packed)}> PIXELS{{{{
 {pixel_values}
 }}}};
+// clang-format on
 
 // Draws the image with its top-left corner at (x, y).
-inline void draw(LGFX &tft, int32_t x, int32_t y) {{
+inline void draw(LGFX &tft, int32_t x, int32_t y)
+{{
   tft.pushImage(x, y, WIDTH, HEIGHT, PIXELS.data(), DEPTH, PALETTE.data());
 }}
 

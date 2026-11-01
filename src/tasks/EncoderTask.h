@@ -48,17 +48,18 @@
 // bound member-function delegate created in main.cpp), never an inline
 // lambda literal - etl::delegate is a non-owning reference to its
 // callable.
-class EncoderTask : public etl::task {
+class EncoderTask : public etl::task
+{
 public:
-  EncoderTask(TWIST &twist_, uint32_t intPin_,
-              etl::delegate<void(int16_t)> onDiff_,
-              etl::delegate<void(void)> onPress_)
-      : etl::task(TASK_PRIORITY_INPUT), twist(twist_), intPin(intPin_),
-        onDiff(onDiff_), onPress(onPress_) {}
+  EncoderTask(TWIST &twist_, uint32_t intPin_, etl::delegate<void(int16_t)> onDiff_, etl::delegate<void(void)> onPress_)
+      : etl::task(TASK_PRIORITY_INPUT), twist(twist_), intPin(intPin_), onDiff(onDiff_), onPress(onPress_)
+  {
+  }
 
   void on_task_added() override { lastRawCount = twist.getCount(); }
 
-  uint32_t task_request_work() const override {
+  uint32_t task_request_work() const override
+  {
     bool active = digitalRead(intPin) == LOW;
     // The INT line only goes idle once nothing's left to clear, which is
     // guaranteed to eventually happen after a real release, however many
@@ -66,13 +67,15 @@ public:
     // tying the "ready to fire onPress again" reset to that objective,
     // hardware-level idle state is more robust than trying to catch a
     // clean isPressed()==false read directly.
-    if (!active) {
+    if (!active)
+    {
       pressHandled = false;
     }
     return active ? 1u : 0u;
   }
 
-  void task_process_work() override {
+  void task_process_work() override
+  {
     // isMoved()/isPressed()/isClicked() each do their own I2C read of the
     // status byte, then their own I2C write of "that stale snapshot with
     // one bit cleared" - a structural race in the library itself, not
@@ -109,12 +112,16 @@ public:
     // call (matching the WIO Terminal's own middle button), so a
     // rotate-while-holding never fires a diff that the receiving end
     // would immediately have to overwrite with the press handler.
-    if (pressed) {
-      if (!pressHandled) {
+    if (pressed)
+    {
+      if (!pressHandled)
+      {
         pressHandled = true;
         onPress();
       }
-    } else if (delta != 0) {
+    }
+    else if (delta != 0)
+    {
       onDiff(delta);
     }
   }

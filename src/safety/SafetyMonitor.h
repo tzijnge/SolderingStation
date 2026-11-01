@@ -20,9 +20,11 @@
 //
 // Further fault sources (sensor fault, supply voltage, tip detection -
 // issues #3, #5, #8) add an enumerator and a check here.
-class SafetyMonitor {
+class SafetyMonitor
+{
 public:
-  enum class Fault : uint8_t {
+  enum class Fault : uint8_t
+  {
     None,
     OverTemperature,
     ThermalRunaway,
@@ -31,8 +33,10 @@ public:
 
   // For fault messages (see FaultScreen). No default case on purpose:
   // -Wswitch then flags a new enumerator that hasn't been given a name here.
-  static constexpr etl::string_view faultName(Fault fault) {
-    switch (fault) {
+  static constexpr etl::string_view faultName(Fault fault)
+  {
+    switch (fault)
+    {
     case Fault::None:
       return "None";
     case Fault::OverTemperature:
@@ -50,16 +54,24 @@ public:
   // the PWM duty that was applied during the cycle that just ended, i.e. the
   // one this temperature is the response to. When several are present, the
   // first in this order wins: over-temperature, thermal runaway, saturation.
-  Fault check(float tipTempC, uint8_t appliedDuty) {
+  Fault check(float tipTempC, uint8_t appliedDuty)
+  {
     bool runaway = checkRunaway(tipTempC, appliedDuty);
     bool saturated = checkSaturated(appliedDuty);
-    if (tipTempC > OVER_TEMPERATURE_LIMIT_C) {
+    if (tipTempC > OVER_TEMPERATURE_LIMIT_C)
+    {
       condition_ = Fault::OverTemperature;
-    } else if (runaway) {
+    }
+    else if (runaway)
+    {
       condition_ = Fault::ThermalRunaway;
-    } else if (saturated) {
+    }
+    else if (saturated)
+    {
       condition_ = Fault::HeaterSaturated;
-    } else {
+    }
+    else
+    {
       condition_ = Fault::None;
     }
     return condition_;
@@ -99,15 +111,19 @@ private:
   // Once the heater is off (fault latched, duty 0) the window resets, so the
   // condition clears and the fault can be acknowledged - likewise for
   // checkSaturated().
-  bool checkRunaway(float tipTempC, uint8_t appliedDuty) {
-    if (appliedDuty < RUNAWAY_DUTY_MIN || tipTempC >= RUNAWAY_ARM_BELOW_C) {
+  bool checkRunaway(float tipTempC, uint8_t appliedDuty)
+  {
+    if (appliedDuty < RUNAWAY_DUTY_MIN || tipTempC >= RUNAWAY_ARM_BELOW_C)
+    {
       runawayCycles = 0;
       return false;
     }
-    if (runawayCycles == 0) {
+    if (runawayCycles == 0)
+    {
       runawayStartC = tipTempC;
     }
-    if (++runawayCycles < RUNAWAY_WINDOW_CYCLES) {
+    if (++runawayCycles < RUNAWAY_WINDOW_CYCLES)
+    {
       return false;
     }
     runawayCycles = 0;
@@ -126,12 +142,15 @@ private:
   // (measured: duty peaks around 110 even desoldering a heatsink). Kept no
   // longer than that, since the tip heats uncontrolled until it trips. A
   // false trip only costs an acknowledgement.
-  bool checkSaturated(uint8_t appliedDuty) {
-    if (appliedDuty < RUNAWAY_DUTY_MIN) {
+  bool checkSaturated(uint8_t appliedDuty)
+  {
+    if (appliedDuty < RUNAWAY_DUTY_MIN)
+    {
       saturatedCycles = 0;
       return false;
     }
-    if (saturatedCycles < SATURATED_CYCLES) {
+    if (saturatedCycles < SATURATED_CYCLES)
+    {
       ++saturatedCycles;
     }
     return saturatedCycles >= SATURATED_CYCLES;

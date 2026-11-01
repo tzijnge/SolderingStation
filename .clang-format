@@ -1,0 +1,5 @@
+# LLVM style with a 120-column limit, and every opening brace on its own line
+# (Allman). VS Code's C/C++ extension picks this file up for format-on-save.
+BasedOnStyle: LLVM
+ColumnLimit: 120
+BreakBeforeBraces: Allman

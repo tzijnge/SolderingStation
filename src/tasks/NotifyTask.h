@@ -21,16 +21,17 @@
 // against ETL's actual delegate_cpp11.h overload set, since the deleted
 // rvalue-lambda constructor only guards lambdas that *aren't* convertible
 // to a function pointer, not this case.
-class NotifyTask : public etl::task {
+class NotifyTask : public etl::task
+{
 public:
-  explicit NotifyTask(etl::delegate<void(void)> onNotify_)
-      : etl::task(TASK_PRIORITY_INPUT), onNotify(onNotify_) {}
+  explicit NotifyTask(etl::delegate<void(void)> onNotify_) : etl::task(TASK_PRIORITY_INPUT), onNotify(onNotify_) {}
 
   void notify() { pending.fetch_add(1); }
 
   uint32_t task_request_work() const override { return pending.load(); }
 
-  void task_process_work() override {
+  void task_process_work() override
+  {
     pending.fetch_sub(1);
     onNotify();
   }

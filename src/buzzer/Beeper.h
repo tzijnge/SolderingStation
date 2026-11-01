@@ -20,12 +20,15 @@
 // restarting it, so a notification already queued by the running sequence's
 // timer can't double-step a new one. Requests are rare (startup, a fault
 // being latched) and short, so nothing important is lost.
-class Beeper {
+class Beeper
+{
 public:
   Beeper(uint32_t pin_, etl::delegate<void(void)> startTimer_) : pin(pin_), startTimer(startTimer_) {}
 
-  void beep(uint8_t count) {
-    if (stepsLeft != 0 || count == 0) {
+  void beep(uint8_t count)
+  {
+    if (stepsLeft != 0 || count == 0)
+    {
       return;
     }
     // One step per edge after the first: on (now), off, on, ..., off.
@@ -34,13 +37,16 @@ public:
     startTimer();
   }
 
-  void onTimer() {
-    if (stepsLeft == 0) {
+  void onTimer()
+  {
+    if (stepsLeft == 0)
+    {
       return;
     }
     --stepsLeft;
     setOn(!on);
-    if (stepsLeft != 0) {
+    if (stepsLeft != 0)
+    {
       startTimer();
     }
   }
@@ -49,7 +55,8 @@ public:
   static constexpr uint32_t BEEP_MS = 100;
 
 private:
-  void setOn(bool on_) {
+  void setOn(bool on_)
+  {
     on = on_;
     analogWrite(pin, on ? DUTY_ON : 0);
   }

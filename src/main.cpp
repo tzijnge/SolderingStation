@@ -15,8 +15,8 @@
 
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
-#include <Wire.h>
 #include <SparkFun_Qwiic_Twist_Arduino_Library.h>
+#include <Wire.h>
 #include <etl/callback_timer_interrupt.h>
 #include <etl/delegate.h>
 #include <etl/function.h>
@@ -43,7 +43,9 @@
 #include "temperature/TipTemperature.h"
 #include "temperature/TipTemperatureDisplayTask.h"
 
-LGFX tft; // LGFX_AUTODETECT (platformio.ini build_flags) configures this for the WIO Terminal's exact ILI9341/SERCOM7/backlight setup automatically
+// LGFX_AUTODETECT (platformio.ini build_flags) configures this for the WIO
+// Terminal's exact ILI9341/SERCOM7/backlight setup automatically.
+LGFX tft;
 TWIST twist;
 
 // This panel is 320x240 in landscape (setRotation(1)). Each row's visual
@@ -147,7 +149,8 @@ TemperatureController temperatureController(setpoint, /*Kp*/ 10.0, /*Ki*/ 2.0, /
 // Guards register_timer()/start()/stop() (called from setup(), i.e. normal
 // code) against a concurrent SysTick interrupt calling tick() mid-update -
 // tick() itself doesn't need guarding since it *is* that interrupt.
-struct SysTickGuard {
+struct SysTickGuard
+{
   SysTickGuard() { NVIC_DisableIRQ(SysTick_IRQn); }
   ~SysTickGuard() { NVIC_EnableIRQ(SysTick_IRQn); }
 };
@@ -187,14 +190,17 @@ float movingAvgSum = 0.0f;
 // thermal runaway check needs. Also reported by printTelemetry().
 uint8_t appliedDuty = 0;
 
-auto pauseForMeasurement = []() {
+auto pauseForMeasurement = []()
+{
   pwmOutput.pause();
   swTimer.start(measureTimerId);
 };
-auto measureAndResume = []() {
+auto measureAndResume = []()
+{
   adcInput.sample();
   SafetyMonitor::Fault fault = safetyMonitor.check(tipTemperature.value(), appliedDuty);
-  if (fault != SafetyMonitor::Fault::None) {
+  if (fault != SafetyMonitor::Fault::None)
+  {
     stationFsm.receive(StationEvent::FaultDetected(fault));
   }
   // compute() still runs while not On: it returns 0 and drops the PID to
@@ -203,7 +209,8 @@ auto measureAndResume = []() {
   // controller.
   bool heaterOn = stationFsm.isOn();
   uint8_t duty = temperatureController.compute(tipTemperature.filteredValue(), heaterOn);
-  if (!heaterOn) {
+  if (!heaterOn)
+  {
     duty = 0;
   }
   appliedDuty = duty;
@@ -231,10 +238,14 @@ auto measureAndResume = []() {
 //
 // Remove this whole task (and movingAvg* above) once tuning is
 // done.
-auto printTelemetry = []() {
-  if (movingAvgCount < MOVING_AVG_SAMPLES) {
+auto printTelemetry = []()
+{
+  if (movingAvgCount < MOVING_AVG_SAMPLES)
+  {
     movingAvgCount++;
-  } else {
+  }
+  else
+  {
     movingAvgSum -= movingAvgBuffer[movingAvgIndex];
   }
   movingAvgBuffer[movingAvgIndex] = tipTemperature.value();
@@ -245,13 +256,20 @@ auto printTelemetry = []() {
   // internally, for resume - this only affects what's plotted), so the
   // plot clearly shows "no active setpoint" at startup and on every
   // off-toggle instead of a misleading stale/preserved number.
-  Serial.print(">setpoint:"); Serial.println(stationFsm.isOn() ? setpoint.value() : 0);
-  Serial.print(">measured:"); Serial.println(tipTemperature.value());
-  Serial.print(">measuredFiltered:"); Serial.println(tipTemperature.filteredValue());
-  Serial.print(">measuredAvg:"); Serial.println(movingAvgSum / movingAvgCount);
-  Serial.print(">duty:"); Serial.println(appliedDuty);
-  Serial.print(">adcRaw:"); Serial.println(tipTemperature.rawAdc());
-  Serial.print(">fault:"); Serial.println(static_cast<uint8_t>(stationFsm.fault()));
+  Serial.print(">setpoint:");
+  Serial.println(stationFsm.isOn() ? setpoint.value() : 0);
+  Serial.print(">measured:");
+  Serial.println(tipTemperature.value());
+  Serial.print(">measuredFiltered:");
+  Serial.println(tipTemperature.filteredValue());
+  Serial.print(">measuredAvg:");
+  Serial.println(movingAvgSum / movingAvgCount);
+  Serial.print(">duty:");
+  Serial.println(appliedDuty);
+  Serial.print(">adcRaw:");
+  Serial.println(tipTemperature.rawAdc());
+  Serial.print(">fault:");
+  Serial.println(static_cast<uint8_t>(stationFsm.fault()));
 };
 NotifyTask pwmPauseTask(pauseForMeasurement);
 NotifyTask adcSampleTask(measureAndResume);
@@ -283,7 +301,8 @@ etl::scheduler<etl::scheduler_policy_sequential_single, 12> scheduler;
 // See system/Panic.h. Runs inside whichever task hit the error and never
 // returns to the scheduler, so no other task (display redraws, the
 // measurement cycle that would resume PWM) runs again before the reboot.
-void panic(etl::string_view title, etl::string_view detail) {
+void panic(etl::string_view title, etl::string_view detail)
+{
   // Heater off first, before anything that could itself go wrong. Stopping
   // swTimer as well keeps the PWM-pause/measure timers from even queueing
   // work - not strictly needed (the scheduler never runs again), but it
@@ -322,13 +341,16 @@ void panic(etl::string_view title, etl::string_view detail) {
   // that same press would reboot straight away, before the screen can be
   // read.
   uint32_t releasedSince = millis();
-  while (millis() - releasedSince < 200) {
-    if (twist.isPressed()) {
+  while (millis() - releasedSince < 200)
+  {
+    if (twist.isPressed())
+    {
       releasedSince = millis();
     }
     delay(10);
   }
-  while (!twist.isPressed()) {
+  while (!twist.isPressed())
+  {
     delay(10);
   }
 
@@ -340,7 +362,8 @@ void panic(etl::string_view title, etl::string_view detail) {
 // doesn't need it), kept only in case some future library overrides that
 // weak hook. __WFI() sleeps the CPU until the next interrupt (a button
 // press, an encoder interrupt, the 1ms SysTick tick, or ...).
-void onIdle() {
+void onIdle()
+{
   yield();
   __WFI();
 }
@@ -354,7 +377,8 @@ void onMiddleButton() { middleButtonTask.notify(); }
 void onRightButton() { rightButtonTask.notify(); }
 
 // Twist's INT pad wired to BCM21 (40-pin header, physical position 40).
-void onEncoderInterrupt() {
+void onEncoderInterrupt()
+{
   // Intentionally empty: EncoderTask::task_request_work() reads the pin
   // level directly. This callback exists only so the attached interrupt
   // wakes the CPU from __WFI() sleep promptly.
@@ -367,12 +391,14 @@ void onEncoderInterrupt() {
 // afterward so millis()/micros()/delay() keep working too (cheap to leave
 // alone, and some library init code still uses delay() internally), but
 // nothing in this project's own logic depends on them anymore.
-extern "C" int sysTickHook(void) {
+extern "C" int sysTickHook(void)
+{
   swTimer.tick(1);
   return 0;
 }
 
-void setup() {
+void setup()
+{
   Serial.begin(115200); // for the Teleplot telemetry in printTelemetry() - see there
 
   Wire.begin();
@@ -388,9 +414,11 @@ void setup() {
   tft.setTextSize(2);
   tft.setCursor(10, 10);
 
-  if (!twist.begin()) {
+  if (!twist.begin())
+  {
     tft.println("Qwiic Twist not found!");
-    while (true) {
+    while (true)
+    {
       delay(1000);
     }
   }
@@ -431,7 +459,8 @@ void setup() {
   // on as ambient state here.
   tft.setFont(&fonts::Font7); // 0-9, ':', '-', '.'
   tft.setTextSize(1);
-  tft.setTextPadding(TemperatureDisplay::NUMBER_PADDING); // shared with TemperatureDisplay's suffix positioning - see its header
+  // Shared with TemperatureDisplay's suffix positioning - see its header.
+  tft.setTextPadding(TemperatureDisplay::NUMBER_PADDING);
 
   pwmOutput.begin();
   pwmOutput.onCounterChanged(0); // defined-off PWM state from boot, matching stationFsm's initial Off state
@@ -440,9 +469,10 @@ void setup() {
   stationFsm.start();
   setpointDisplay.begin(); // draws the static degree-C suffix once
 
-  analogReadResolution(12); // 0..4095 instead of the default 10-bit 0..1023
+  analogReadResolution(12);   // 0..4095 instead of the default 10-bit 0..1023
   temperatureDisplay.begin(); // draws the static degree-C suffix once
-  adcInput.add_observer(etl::delegate<void(uint16_t)>::create<TipTemperature, &TipTemperature::onAdcSample>(tipTemperature));
+  adcInput.add_observer(
+      etl::delegate<void(uint16_t)>::create<TipTemperature, &TipTemperature::onAdcSample>(tipTemperature));
   adcInput.sample(); // seeds tipTemperature; temperatureDisplayTask's first poll draws the initial number
 
   // Registered but not started - only re-started by pauseForMeasurement,
@@ -461,8 +491,8 @@ void setup() {
   swTimer.start(telemetryTimerId);
 
   // Registered but not started - Beeper re-starts it for each step.
-  beeperTimerId = swTimer.register_timer(
-      etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(beeperTask), Beeper::BEEP_MS, false);
+  beeperTimerId = swTimer.register_timer(etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(beeperTask),
+                                         Beeper::BEEP_MS, false);
 
   swTimer.enable(true);
 
@@ -486,7 +516,8 @@ void setup() {
   beeper.beep(1);
 }
 
-void loop() {
+void loop()
+{
   // Blocks here running the cooperative task loop for as long as the
   // scheduler is running (i.e. forever, unless something calls
   // scheduler.exit_scheduler()).
