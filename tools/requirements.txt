@@ -1,2 +1,5 @@
 resvg-py>=0.5.0
 Pillow>=10
+# LotusRPC: lrpcc and tools/telemetry.py. tools/lrpc_generate.py installs
+# the same version (from this line) for the build.
+lotusrpc[transport_serial]==1.0.0

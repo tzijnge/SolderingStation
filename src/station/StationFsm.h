@@ -7,6 +7,7 @@
 #include <etl/string_view.h>
 
 #include "StationEvents.h"
+#include "StationStateId.h"
 #include "safety/SafetyMonitor.h"
 #include "system/Panic.h"
 #include "temperature/TemperatureSetpoint.h"
@@ -31,13 +32,6 @@ class StationFsm;
 
 namespace StationState
 {
-
-enum class StateId : etl::fsm_state_id_t
-{
-  Off,
-  On,
-  Fault,
-};
 
 // etl::fsm_state takes, and its handlers return, a plain fsm_state_id_t -
 // a scoped enum doesn't convert implicitly, so this does it explicitly.
@@ -123,6 +117,9 @@ public:
   // The heater may only run in On - TemperatureController and the
   // measurement cycle check this every cycle (see main.cpp).
   bool isOn() const { return get_state_id() == StationState::id(StationState::StateId::On); }
+
+  // For the RPC status service.
+  StationState::StateId state() const { return static_cast<StationState::StateId>(get_state_id()); }
 
   // The latched fault while in Fault, None otherwise - for ScreenManager,
   // FaultScreen and telemetry.

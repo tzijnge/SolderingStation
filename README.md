@@ -9,7 +9,8 @@
 - [Visual Studio Code](https://code.visualstudio.com/)
 - [PlatformIO IDE extension](https://platformio.org/install/ide?install=vscode) for VS Code (recommended in `.vscode/extensions.json`)
   - Installs its own toolchain (GCC ARM, `pio` CLI, etc.) on first use — no separate Arduino IDE or ARM toolchain install needed
-- [Teleplot](https://teleplot.fr/) VS Code extension (optional) — for live-plotting the PID tuning telemetry printed over serial, see [Telemetry / PID tuning](#telemetry--pid-tuning) below
+- [Teleplot](https://teleplot.fr/) VS Code extension (optional) — for live-plotting the telemetry, see [Telemetry / PID tuning](#telemetry--pid-tuning) below
+- Python 3.10 or newer with `pip install -r tools/requirements.txt` (optional) — for the PC tools: remote control with `lrpcc` and the telemetry script, see [Remote control (LotusRPC)](#remote-control-lotusrpc) below
 - [KiCad 10](https://www.kicad.org/) — for the front panel PCB, see [Front panel](#front-panel) below
 
 ### Hardware target
@@ -25,6 +26,7 @@ Declared in `platformio.ini` under `lib_deps`, fetched automatically by Platform
 - [SparkFun_Qwiic_Twist_Arduino_Library](https://github.com/sparkfun/SparkFun_Qwiic_Twist_Arduino_Library) — driver for the Qwiic Twist rotary encoder, connected via a Grove-to-Qwiic cable on the WIO Terminal's Grove I2C port
 - [ETL (Embedded Template Library)](https://github.com/ETLCPP/etl) — used throughout for containers/utilities in this interrupt-driven design
 - [Arduino-PID-Library](https://github.com/br3ttb/Arduino-PID-Library) — drives the tip-temperature PID control loop
+- [LotusRPC](https://github.com/tzijnge/LotusRpc) — remote control and telemetry over USB. Not a `lib_deps` entry: its server code is generated during the build, see [Remote control (LotusRPC)](#remote-control-lotusrpc) below
 
 ### Building and uploading
 
@@ -141,8 +143,49 @@ Things to watch out for:
 - The panel must fill the enclosure's slots (2.2 mm here). A 2.0 mm board costs about four times as much as a 1.0 or 1.6 mm one, so here two identical 1.0 mm boards are stacked (`PANEL_THICKNESS` = 1.0): the back one carries the parts, the front one only shows its front side, and the parts' screws clamp them together. The 40-pin header then goes through both boards — use one with pins long enough to solder on the back of the back board.
 - Have the fab leave its order number off the board (at JLCPCB: "Mark on PCB: Remove Mark", same price).
 
+## Remote control (LotusRPC)
+
+The station is a [LotusRPC](https://github.com/tzijnge/LotusRpc) server on its USB serial port. PC tools can simulate the knob and buttons, read the station's state, and receive the telemetry. The interface is defined in `rpc/soldering_station.lrpc.yaml`:
+
+| Service | Functions and streams |
+|---|---|
+| `input` | `press`, `rotate <steps>`, `button left\|middle\|right` — the same events as the real knob and buttons, so they go through the same limits and fault handling. Like the knob, a press also acknowledges a fault and can switch the heater on. |
+| `status` | `state`, `fault`, `setpoint`, `tip_temperature` (measured and filtered), `duty` |
+| `telemetry` | stream `samples`: one sample every 100 ms while started (see below) |
+
+**Code generation.** The server code is generated during every PlatformIO build by `tools/lrpc_generate.py` (`extra_scripts` in `platformio.ini`), into the build directory; nothing generated is committed. The script installs the LotusRPC version pinned in `tools/requirements.txt` in a venv of its own (`.pio/lrpc-venv`, not PlatformIO's own Python, whose packages LotusRPC's pins could conflict with), and only regenerates when the definition or the pin changed. The generated `soldering_station.hpp` is included in the block before `Arduino.h` in `main.cpp` (see [Known build gotchas](#known-build-gotchas)).
+
+**lrpcc.** `lrpcc` is LotusRPC's command-line client. It reads `lrpcc.config.yaml`, which is machine-specific and therefore git-ignored. Create it in the repo root, with the station's serial port:
+
+```yaml
+definition_url: rpc/soldering_station.lrpc.yaml
+transport_type: serial
+transport_params:
+  port: COM5
+  timeout: 2
+```
+
+Run `lrpcc` from the repo root (it resolves `definition_url` against the working directory):
+
+```
+lrpcc input press
+lrpcc input rotate 5
+lrpcc input rotate -- -5
+lrpcc input button left
+lrpcc status state
+lrpcc status tip_temperature
+```
+
+The serial port can only be open in one program at a time: `lrpcc` can't be used while the telemetry script runs.
+
 ## Telemetry / PID tuning
 
-`main.cpp` prints live PID tuning telemetry over `Serial` (115200 baud) in [Teleplot](https://teleplot.fr/)'s `>name:value` line format — install the Teleplot VS Code extension, point it at the board's serial port, and it plots `setpoint`, `measured`, `measuredFiltered`, `measuredAvg`, and `duty` live. This telemetry code (and the `TipTemperature::filteredValue()`/raw `value()` split it depends on) is marked `// TEMPORARY` in the source and intended to be removed once PID tuning is complete.
+`tools/telemetry.py` starts the `telemetry` service's `samples` stream and forwards each sample to [Teleplot](https://teleplot.fr/) over UDP (port 47269, Teleplot's default) as `name:value` lines. Unlike over serial, there's no `>` in front: over UDP, Teleplot reads that as a log message.
+
+```
+python tools/telemetry.py [--port COM5]
+```
+
+Without `--port` it takes the port from `lrpcc.config.yaml`. Open Teleplot in VS Code (not connected to the serial port, which the script holds); it plots `setpoint` (0 while not On), `measured`, `measuredFiltered`, `measuredAvg` (2 s moving average, calculated by the script), `duty`, `adcRaw` and `fault`. Ctrl+C stops the stream. The station also stops it when the port is closed, so a killed script leaves nothing running.
 
 `TemperatureController`'s `Kp`/`Ki`/`Kd` gains are placeholders — this project has no characterized plant model (heater wattage, thermal mass, sensor lag), so they need on-device tuning: start with pure P, observe steady-state behavior, add `Ki` to remove steady-state error, and only add `Kd` afterward if overshoot still needs taming.

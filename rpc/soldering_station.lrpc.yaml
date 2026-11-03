@@ -1,0 +1,85 @@
+# LotusRPC interface of the soldering station (https://github.com/tzijnge/LotusRpc).
+# The server code is generated from this file during the PlatformIO build (see
+# tools/lrpc_generate.py); nothing generated is committed.
+#
+# Inputs go through the same paths as the real knob and buttons: there's no
+# direct heater control, and setpoint clamping and fault latching apply
+# unchanged.
+name: soldering_station
+settings:
+  namespace: rpc
+  rx_buffer_size: 256
+  tx_buffer_size: 256
+  version: "1"
+
+enums:
+  # The external headers are included before Arduino.h (see main.cpp), so
+  # they must not include Arduino.h themselves.
+  - name: StateId
+    external: station/StationStateId.h
+    external_namespace: StationState
+    fields: ["Off", "On", Fault] # quoted: YAML reads bare On/Off as booleans
+  - name: Fault
+    external: safety/SafetyMonitor.h
+    external_namespace: SafetyMonitor
+    fields: [None, OverTemperature, ThermalRunaway, HeaterSaturated]
+  - name: Button
+    fields: [Left, Middle, Right]
+
+services:
+  # Simulated inputs: post the same StationEvents as the real knob and buttons.
+  - name: input
+    functions:
+      # Knob push. Like the real knob, this also acknowledges a fault.
+      - name: press
+      # Knob rotation by a number of detents. 0 is ignored (no real input
+      # produces it).
+      - name: rotate
+        params:
+          - { name: steps, type: int16_t }
+      # One of the three buttons on top: left -1, middle press, right +1.
+      - name: button
+        params:
+          - { name: which, type: "@Button" }
+
+  # Return values are named "value", not after their function: for a
+  # parameter or return value with its function's name, LotusRPC 1.0.0
+  # generates code that doesn't compile (the local variable it stores it in
+  # hides the function). Same for input.button's "which".
+  - name: status
+    functions:
+      - name: state
+        returns:
+          - { name: value, type: "@StateId" }
+      # The latched fault while in Fault, None otherwise.
+      - name: fault
+        returns:
+          - { name: value, type: "@Fault" }
+      # Kept while Off, so it's the value the station heats to when turned on.
+      - name: setpoint
+        returns:
+          - { name: value, type: int16_t }
+      - name: tip_temperature
+        returns_alias: Temperatures
+        returns:
+          - { name: measured, type: float }
+          - { name: filtered, type: float }
+      # PWM duty (0..255) applied in the last measurement cycle.
+      - name: duty
+        returns:
+          - { name: value, type: uint8_t }
+
+  - name: telemetry
+    streams:
+      # One sample per 100 ms measurement cycle while started.
+      - name: samples
+        origin: server
+        finite: false
+        params:
+          # 0 while not On.
+          - { name: setpoint, type: int16_t }
+          - { name: measured, type: float }
+          - { name: filtered, type: float }
+          - { name: duty, type: uint8_t }
+          - { name: adc_raw, type: uint16_t }
+          - { name: fault, type: "@Fault" }

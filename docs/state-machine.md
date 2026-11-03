@@ -45,8 +45,10 @@ stateDiagram-v2
 
 | Event | Producer |
 |---|---|
-| `Rotate(steps)` | Qwiic Twist rotation, left (−1) and right (+1) buttons |
-| `Press` | Qwiic Twist push, middle button |
+| `Rotate(steps)` | Qwiic Twist rotation, left (−1) and right (+1) buttons, RPC `input rotate` (0 steps is ignored) and `input button left\|right` |
+| `Press` | Qwiic Twist push, middle button, RPC `input press` and `input button middle` |
 | `FaultDetected(fault)` | `SafetyMonitor::check()` in the 100 ms measurement cycle, posted every cycle the condition is present |
+
+**RPC inputs** ([src/rpc/InputService.h](../src/rpc/InputService.h)) call the same delegates as the knob and buttons, so the FSM can't tell them apart. That includes acknowledging a fault and switching the heater on from a PC. There's no other path from RPC to the heater.
 
 **Fault sources** (`SafetyMonitor::Fault`): `OverTemperature` (tip above 450 °C), `ThermalRunaway` (duty ≥ 200 for 3 s while below 150 °C, without rising 20 °C), `HeaterSaturated` (duty ≥ 200 for 15 s without a break). Entering Fault beeps twice, since while soldering the user is likely not watching the screen.
