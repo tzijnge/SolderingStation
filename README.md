@@ -150,7 +150,7 @@ The station is a [LotusRPC](https://github.com/tzijnge/LotusRpc) server on its U
 | Service | Functions and streams |
 |---|---|
 | `input` | `press`, `rotate <steps>`, `button left\|middle\|right` — the same events as the real knob and buttons, so they go through the same limits and fault handling. Like the knob, a press also acknowledges a fault and can switch the heater on. |
-| `status` | `state`, `fault`, `setpoint`, `tip_temperature` (measured and filtered), `duty` |
+| `status` | `state`, `fault`, `setpoint`, `tip_temperature` (measured and filtered), `duty`, and `all` for all of these in one call |
 | `telemetry` | stream `samples`: one sample every 100 ms while started (see below) |
 
 **Code generation.** The server code is generated during every PlatformIO build by `tools/lrpc_generate.py` (`extra_scripts` in `platformio.ini`), into the build directory; nothing generated is committed. The script installs the LotusRPC version pinned in `tools/requirements.txt` in a venv of its own (`.pio/lrpc-venv`, not PlatformIO's own Python, whose packages LotusRPC's pins could conflict with), and only regenerates when the definition or the pin changed. The generated `soldering_station.hpp` is included in the block before `Arduino.h` in `main.cpp` (see [Known build gotchas](#known-build-gotchas)).
@@ -174,6 +174,7 @@ lrpcc input rotate -- -5
 lrpcc input button left
 lrpcc status state
 lrpcc status tip_temperature
+lrpcc status all
 ```
 
 The serial port can only be open in one program at a time: `lrpcc` can't be used while the telemetry script runs.

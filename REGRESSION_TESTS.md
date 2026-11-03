@@ -106,7 +106,7 @@ General fault behaviour, checked as part of every fault test below: the heater t
   Expected: the build creates `.pio/lrpc-venv`, installs LotusRPC and generates the code without manual steps. A second build doesn't regenerate (no "generating" line). Changing `rpc/soldering_station.lrpc.yaml` regenerates on the next build.
 - **RC-2 Inputs (#24).** With `lrpcc`: from Off `input rotate 5`; then `input rotate -- -5`, `input press`, `input button left`, `input button middle`, `input button right`, and `input rotate 0`.
   Expected: exactly what the knob and buttons do (IN-1, IN-2, IN-3, IN-8) on the display and in `status state` / `status setpoint`. `rotate 0` does nothing, also from Off.
-- **RC-3 Status (#24).** Compare `status state`, `fault`, `setpoint`, `tip_temperature` and `duty` with the display and Teleplot, Off and On while heating.
+- **RC-3 Status (#24).** Compare `status state`, `fault`, `setpoint`, `tip_temperature`, `duty` and `all` with the display and Teleplot, Off and On while heating.
   Expected: they match.
 - **RC-4 Faults over RPC (#24).** During a fault from section 6: `input rotate 5`, then `input press` while the condition is still present, then after it's gone.
   Expected: as with the knob — rotate is ignored, the press is refused while the condition is present and acknowledges the fault (to Off) once it's gone. `status fault` shows the latched fault until then.

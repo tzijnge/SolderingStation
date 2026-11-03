@@ -25,6 +25,10 @@ protected:
   int16_t setpoint() override { return temperatureSetpoint.value(); }
   rpc::Temperatures tip_temperature() override { return {tipTemperature.value(), tipTemperature.filteredValue()}; }
   uint8_t duty() override { return appliedDuty; }
+  rpc::Status all() override
+  {
+    return {state(), fault(), setpoint(), tipTemperature.value(), tipTemperature.filteredValue(), duty()};
+  }
 
 private:
   const StationFsm &stationFsm;

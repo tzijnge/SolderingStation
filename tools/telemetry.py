@@ -13,11 +13,11 @@ Without --port, the port is taken from lrpcc.config.yaml in the repo root
 so lrpcc can't be used while this runs.
 """
 
-import argparse
 import socket
 from collections import deque
 from pathlib import Path
 
+import click
 import serial
 import yaml
 from lrpc.client import LrpcClient
@@ -41,23 +41,22 @@ def default_port() -> str | None:
     return config.get("transport_params", {}).get("port")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--port", default=default_port(), help="serial port of the station (default: from lrpcc.config.yaml)")
-    args = parser.parse_args()
-    if args.port is None:
-        parser.error("no --port given and no port in lrpcc.config.yaml")
+@click.command(help=__doc__)
+@click.option("--port", default=default_port, help="Serial port of the station.  [default: from lrpcc.config.yaml]")
+def main(port: str | None) -> None:
+    if port is None:
+        raise click.UsageError("no --port given and no port in lrpcc.config.yaml")
 
     lrpc_def = load_lrpc_def(DEFINITION)
     fault = lrpc_def.enum("Fault")
 
     # The timeout is how long a read may wait for the next sample (100 ms
     # apart); the client raises TimeoutError when it expires.
-    with serial.Serial(args.port, timeout=2) as transport:
+    with serial.Serial(port, timeout=2) as transport:
         client = LrpcClient(lrpc_def, transport)
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         measured_history: deque[float] = deque(maxlen=MOVING_AVG_SAMPLES)
-        print(f"Forwarding telemetry from {args.port} to Teleplot at {TELEPLOT[0]}:{TELEPLOT[1]}, Ctrl+C to stop")
+        click.echo(f"Forwarding telemetry from {port} to Teleplot at {TELEPLOT[0]}:{TELEPLOT[1]}, Ctrl+C to stop")
         try:
             for response in client.communicate_all("telemetry", "samples", start=True):
                 sample = response.payload
@@ -78,7 +77,7 @@ def main() -> None:
             pass
         finally:
             next(client.communicate_all("telemetry", "samples", start=False), None)
-            print("Stopped")
+            click.echo("Stopped")
 
 
 if __name__ == "__main__":

@@ -68,6 +68,16 @@ services:
       - name: duty
         returns:
           - { name: value, type: uint8_t }
+      # All of the above in one call, taken at the same moment.
+      - name: all
+        returns_alias: Status
+        returns:
+          - { name: state, type: "@StateId" }
+          - { name: fault, type: "@Fault" }
+          - { name: setpoint, type: int16_t }
+          - { name: measured, type: float }
+          - { name: filtered, type: float }
+          - { name: duty, type: uint8_t }
 
   - name: telemetry
     streams:
