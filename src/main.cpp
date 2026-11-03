@@ -9,9 +9,18 @@
 // Parsing them first means the macros don't exist yet, and their include
 // guards keep them from being parsed again after they do. main.cpp is the
 // only translation unit, so this is the one place that needs it.
+//
+// The LotusRPC server generated from rpc/soldering_station.lrpc.yaml (see
+// tools/lrpc_generate.py) is included here as a whole, rather than the
+// standard headers it uses: it calls std::min and friends itself, and
+// including it whole keeps working whatever headers a newer LotusRPC uses.
+// Its external enums' headers (station/StationStateId.h,
+// safety/SafetyMonitor.h) are pulled in here too, so they must stay free of
+// Arduino.h.
 #include <array>
 #include <etl/algorithm.h>
 #include <etl/string_stream.h>
+#include <soldering_station.hpp>
 
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
@@ -29,6 +38,10 @@
 #include "display/MainScreen.h"
 #include "display/Screen.h"
 #include "display/ScreenManager.h"
+#include "rpc/InputService.h"
+#include "rpc/RpcServer.h"
+#include "rpc/StatusService.h"
+#include "rpc/TelemetryService.h"
 #include "safety/FaultScreen.h"
 #include "safety/SafetyMonitor.h"
 #include "station/StationEvents.h"
@@ -156,8 +169,8 @@ struct SysTickGuard
 };
 
 // A 100ms repeating PWM-pause, a 5ms one-shot ADC measurement, a 100ms
-// repeating telemetry print and a 100ms one-shot beeper step (see
-// pauseForMeasurement/measureAndResume/printTelemetry below, and Beeper) -
+// repeating telemetry sample and a 100ms one-shot beeper step (see
+// pauseForMeasurement/measureAndResume/telemetryTask below, and Beeper) -
 // this is just where this project's software timers live. tick() is called
 // with a 1ms count from sysTickHook() below, so periods registered on this
 // are in milliseconds.
@@ -173,21 +186,10 @@ void startBeeperTimer() { swTimer.start(beeperTimerId); }
 // settle before the actual sample is taken and PWM resumed.
 etl::timer::id::type measureTimerId; // assigned once in setup()
 
-// TEMPORARY: 2-second moving average of the measured temperature, for the
-// Teleplot tuning plot (see printTelemetry() below) - smooths out sensor
-// noise so the underlying trend is easier to read. printTelemetry() runs
-// every 100ms, so 2000/100 = 20 samples. movingAvgCount ramps up from 0 to
-// MOVING_AVG_SAMPLES so the average isn't biased low by not-yet-written
-// zeros in the buffer during the first 2 seconds after boot.
-constexpr size_t MOVING_AVG_SAMPLES = 20;
-std::array<float, MOVING_AVG_SAMPLES> movingAvgBuffer{};
-size_t movingAvgIndex = 0;
-size_t movingAvgCount = 0;
-float movingAvgSum = 0.0f;
-
 // The duty measureAndResume() applied in the previous cycle - the next
 // cycle's sample is the response to it, which is what safetyMonitor's
-// thermal runaway check needs. Also reported by printTelemetry().
+// thermal runaway check needs. Also reported over RPC (status and
+// telemetry services below).
 uint8_t appliedDuty = 0;
 
 auto pauseForMeasurement = []()
@@ -221,59 +223,29 @@ auto measureAndResume = []()
   pwmOutput.resume();
 };
 
-// TEMPORARY: PID-tuning telemetry, in Teleplot's >name:value format
-// (https://teleplot.fr/) - install the "teleplot" VS Code extension, point
-// it at this board's serial port, and it plots setpoint/measured/
-// measuredAvg/duty live. One line per variable rather than combining them
-// with commas - more reliably parsed.
-//
-// Deliberately a separate task from measureAndResume(), on its own 100ms
-// timer, rather than printing inline there - Serial.print() can block
-// (e.g. if the USB CDC buffer fills because nothing's draining it fast
-// enough), and measureAndResume() needs pwmOutput.resume() to run
-// promptly and predictably every cycle, same reasoning as why display
-// redraws are decoupled from it (see TipTemperatureDisplayTask). A stalled
-// print here can no longer delay that at all, or desynchronize the pause/
-// resume timing against the 5ms measurement window.
-//
-// Remove this whole task (and movingAvg* above) once tuning is
-// done.
-auto printTelemetry = []()
-{
-  if (movingAvgCount < MOVING_AVG_SAMPLES)
-  {
-    movingAvgCount++;
-  }
-  else
-  {
-    movingAvgSum -= movingAvgBuffer[movingAvgIndex];
-  }
-  movingAvgBuffer[movingAvgIndex] = tipTemperature.value();
-  movingAvgSum += movingAvgBuffer[movingAvgIndex];
-  movingAvgIndex = (movingAvgIndex + 1) % MOVING_AVG_SAMPLES;
+// Remote control and telemetry over the USB serial port with LotusRPC - see
+// rpc/soldering_station.lrpc.yaml for the interface and the README for the
+// PC tools. The input service calls the same delegates as the real knob and
+// buttons (rotate/press above, the button tasks' notify()), so RPC has no
+// path to the heater that the knob doesn't have.
+auto notifyLeftButton = etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(leftButtonTask);
+auto notifyMiddleButton = etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(middleButtonTask);
+auto notifyRightButton = etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(rightButtonTask);
+InputService inputService(rotate, press, notifyLeftButton, notifyMiddleButton, notifyRightButton);
+StatusService statusService(stationFsm, setpoint, tipTemperature, appliedDuty);
+TelemetryService telemetryService(Serial, stationFsm, setpoint, tipTemperature, appliedDuty);
+RpcServer rpcServer(Serial);
 
-  // 0 while off (setpoint.value() itself still holds the real value
-  // internally, for resume - this only affects what's plotted), so the
-  // plot clearly shows "no active setpoint" at startup and on every
-  // off-toggle instead of a misleading stale/preserved number.
-  Serial.print(">setpoint:");
-  Serial.println(stationFsm.isOn() ? setpoint.value() : 0);
-  Serial.print(">measured:");
-  Serial.println(tipTemperature.value());
-  Serial.print(">measuredFiltered:");
-  Serial.println(tipTemperature.filteredValue());
-  Serial.print(">measuredAvg:");
-  Serial.println(movingAvgSum / movingAvgCount);
-  Serial.print(">duty:");
-  Serial.println(appliedDuty);
-  Serial.print(">adcRaw:");
-  Serial.println(tipTemperature.rawAdc());
-  Serial.print(">fault:");
-  Serial.println(static_cast<uint8_t>(stationFsm.fault()));
-};
+// Telemetry samples go out from a task on their own 100ms timer rather than
+// inline in measureAndResume(): Serial writes can block (up to 70ms per
+// packet if the PC isn't reading), and measureAndResume() needs
+// pwmOutput.resume() to run promptly and predictably every cycle - same
+// reasoning as why display redraws are decoupled from it (see
+// TipTemperatureDisplayTask).
 NotifyTask pwmPauseTask(pauseForMeasurement);
 NotifyTask adcSampleTask(measureAndResume);
-NotifyTask telemetryTask(printTelemetry);
+NotifyTask
+    telemetryTask(etl::delegate<void(void)>::create<TelemetryService, &TelemetryService::sendSample>(telemetryService));
 NotifyTask beeperTask(etl::delegate<void(void)>::create<Beeper, &Beeper::onTimer>(beeper));
 TipTemperatureDisplayTask temperatureDisplayTask(tipTemperature, temperatureDisplay, activeScreen, Screen::Main);
 
@@ -296,7 +268,7 @@ ScreenManager screenManager(tft, stationFsm, activeScreen, mainScreen, faultScre
 // temperatureController and pwmOutput aren't scheduler tasks at all - each
 // update happens synchronously, inline, as part of the producing task's
 // task_process_work() call.
-etl::scheduler<etl::scheduler_policy_sequential_single, 12> scheduler;
+etl::scheduler<etl::scheduler_policy_sequential_single, 13> scheduler;
 
 // See system/Panic.h. Runs inside whichever task hit the error and never
 // returns to the scheduler, so no other task (display redraws, the
@@ -399,7 +371,12 @@ extern "C" int sysTickHook(void)
 
 void setup()
 {
-  Serial.begin(115200); // for the Teleplot telemetry in printTelemetry() - see there
+  // USB CDC: the baud rate is ignored, data goes at USB speed. Carries the
+  // RPC traffic (rpcServer) and the panic message.
+  Serial.begin(115200);
+  rpcServer.registerService(inputService);
+  rpcServer.registerService(statusService);
+  rpcServer.registerService(telemetryService);
 
   Wire.begin();
   Wire.setClock(400000); // fast-mode I2C, keeps polling latency low
@@ -484,8 +461,8 @@ void setup()
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(pwmPauseTask), 100U, true);
   swTimer.start(pwmPauseTimerId);
 
-  // TEMPORARY: drives printTelemetry() - see its own comment for why this
-  // is a separate task/timer rather than being inline in measureAndResume().
+  // Drives telemetryTask - see there for why this is a separate task/timer
+  // rather than being inline in measureAndResume().
   etl::timer::id::type telemetryTimerId = swTimer.register_timer(
       etl::delegate<void(void)>::create<NotifyTask, &NotifyTask::notify>(telemetryTask), 100U, true);
   swTimer.start(telemetryTimerId);
@@ -500,6 +477,7 @@ void setup()
   scheduler.add_task(leftButtonTask);
   scheduler.add_task(middleButtonTask);
   scheduler.add_task(rightButtonTask);
+  scheduler.add_task(rpcServer);
   scheduler.add_task(setpointDisplayTask);
   scheduler.add_task(pwmPauseTask);
   scheduler.add_task(adcSampleTask);

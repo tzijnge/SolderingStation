@@ -6,7 +6,8 @@ Each test has an ID for reference (e.g. in a PR or an issue), the steps, and the
 
 Useful for many tests:
 
-- **Teleplot** (see the README's "Telemetry / PID tuning" section) plots `setpoint`, `measured`, `duty` and `fault` live over serial.
+- **Teleplot** via `tools/telemetry.py` (see the README's "Telemetry / PID tuning" section) plots `setpoint`, `measured`, `duty` and `fault` live.
+- **lrpcc** (see the README's "Remote control (LotusRPC)" section) reads the state (`lrpcc status state`, `fault`, `setpoint`, `tip_temperature`, `duty`) and simulates the knob and buttons. It can't be used while the telemetry script holds the port.
 - **40-pin header:** A3, the tip temperature ADC input, is `BCM24` on pin 18. The nearest GND is pin 20. Pin 17 is 3.3 V, although `variant.h` labels it GND.
 
 ## 1. Startup
@@ -92,5 +93,20 @@ General fault behaviour, checked as part of every fault test below: the heater t
 
 ## 9. Telemetry
 
-- **TE-1 Teleplot.** Connect Teleplot to the board's serial port.
-  Expected: `setpoint` (0 while Off), `measured`, `measuredFiltered`, `measuredAvg`, `duty`, `adcRaw` and `fault` update about 10 times per second.
+- **TE-1 Teleplot (#24).** Run `python tools/telemetry.py` and open Teleplot.
+  Expected: `setpoint` (0 while Off), `measured`, `measuredFiltered`, `measuredAvg`, `duty`, `adcRaw` and `fault` update about 10 times per second. Ctrl+C stops the script with "Stopped".
+- **TE-2 Killed telemetry script (#24).** Start `tools/telemetry.py`, kill it without Ctrl+C (close its terminal), then run `lrpcc status state`.
+  Expected: `lrpcc` gets the right answer (the station stopped the stream when the port closed).
+- **TE-3 No client (#24).** Leave the port closed (or open it in a terminal that doesn't read) and use the station normally for a minute.
+  Expected: no stalls; display, knob and heating respond as usual.
+
+## 10. Remote control
+
+- **RC-1 Build (#24).** Delete `.pio` and build.
+  Expected: the build creates `.pio/lrpc-venv`, installs LotusRPC and generates the code without manual steps. A second build doesn't regenerate (no "generating" line). Changing `rpc/soldering_station.lrpc.yaml` regenerates on the next build.
+- **RC-2 Inputs (#24).** With `lrpcc`: from Off `input rotate 5`; then `input rotate -- -5`, `input press`, `input button left`, `input button middle`, `input button right`, and `input rotate 0`.
+  Expected: exactly what the knob and buttons do (IN-1, IN-2, IN-3, IN-8) on the display and in `status state` / `status setpoint`. `rotate 0` does nothing, also from Off.
+- **RC-3 Status (#24).** Compare `status state`, `fault`, `setpoint`, `tip_temperature`, `duty` and `all` with the display and Teleplot, Off and On while heating.
+  Expected: they match.
+- **RC-4 Faults over RPC (#24).** During a fault from section 6: `input rotate 5`, then `input press` while the condition is still present, then after it's gone.
+  Expected: as with the knob — rotate is ignored, the press is refused while the condition is present and acknowledges the fault (to Off) once it's gone. `status fault` shows the latched fault until then.

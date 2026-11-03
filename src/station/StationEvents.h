@@ -6,8 +6,9 @@
 #include "safety/SafetyMonitor.h"
 
 // Events driving StationFsm. Producers (EncoderTask, the button NotifyTasks,
-// the measurement cycle in main.cpp) only post these - what an event means
-// depends on the station's current state, which only StationFsm knows.
+// the RPC InputService, the measurement cycle in main.cpp) only post these -
+// what an event means depends on the station's current state, which only
+// StationFsm knows.
 // Posted from scheduler task context only, never from an ISR: etl::fsm
 // isn't interrupt-safe, and the button/encoder ISRs already defer to tasks.
 namespace StationEvent
