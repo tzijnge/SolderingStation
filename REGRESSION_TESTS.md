@@ -64,19 +64,25 @@ Useful for many tests:
 General fault behaviour, checked as part of every fault test below: the heater turns off immediately (`duty` 0), the fault screen shows the fault's message, the warning sign, the live tip temperature and "Press knob to reset", and the station beeps twice. Turning the knob is ignored. A knob press acknowledges the fault and lands in Off, and heating again takes a second press.
 
 - **SF-1 Over-temperature (#1) (code change).** In `measureAndResume()` (`main.cpp`), temporarily add `(digitalRead(WIO_KEY_A) == LOW ? 500.0f : 0.0f)` to the temperature passed to `safetyMonitor.check()`, so holding the right button fakes a tip above the limit. Station On, hold the right button.
-  Expected: "Tip above 450C limit" at once (within one 100 ms cycle).
+  Expected: "Tip above 450C or missing" at once (within one 100 ms cycle).
 - **SF-2 Over-temperature stays latched (#1) (code change).** Continue from SF-1.
   1. Keep holding the right button and press the knob. Expected: the acknowledgement is refused, and the fault screen stays.
   2. Release the right button and wait a few seconds. Expected: the fault screen stays (latched, although the condition is gone).
   3. Press the knob. Expected: the main screen in Off.
 - **SF-3 Shorted sensor (#2).** Cold tip inserted, setpoint 100 °C, station Off. Connect A3 (pin 18) to GND (pin 20) through about 100 Ω, then switch on. Never do this with a hot tip: the tip heats uncontrolled until the fault trips.
   Expected: "Tip not heating up" about 3 s after switching on.
-- **SF-4 No tip (#2).** Remove the tip, set 100 °C and switch on.
-  Expected: "Tip not heating up" after about 3 s.
+- **SF-4 No tip, cable disconnected (#2).** Unplug the whole iron cable, set 100 °C and switch on.
+  Expected: "Tip not heating up" after about 3 s. (A bare connector only shows a little mains pickup, raw 0–250, so the over-temperature check doesn't see it.)
 - **SF-5 Heater saturated (#2) (code change).** Temporarily set `SATURATED_CYCLES` in `SafetyMonitor.h` to 20 (2 s). From cold, set 430 °C and switch on.
   Expected: "Heater at full power too long" about 2 s after switching on.
 - **SF-6 No false trips (#2).** With the real limits: heat up from cold to 430 °C, and solder and desolder heavy parts (e.g. a heatsink) at 200 °C and at 330–350 °C.
   Expected: no fault.
+- **SF-7 Tip missing, cable connected (#3).** Station Off, cable plugged into the front panel, tip disconnected from the cable.
+  Expected, in the setup measured for #3: "Tip above 450C or missing" within a few seconds, with two beeps, with the station Off. This is a side effect, not a designed tip check: the open input picks up 50 Hz mains, and the 10 Hz sampling turns that into a swing between raw ~10 and 4095 with a period of about 7 s (`tools/capture.py` shows `adc_raw` max 4095, mean ~1700). Pressing the knob is refused while the reading is high, but is accepted in the low phase (about 3.5 s); the fault then returns on the next swing. With less pickup (another cable or place) the input may stay low and no fault shows. That is the known limitation, not a failure: record what you see.
+- **SF-8 Tip reconnected (#3).** Cold tip. Plug the cable's tip in and out, and the cable in and out, a few times, station Off.
+  Expected: no fault if the tip makes good contact. Plugging disturbs the reading (measured peaks: raw ~860, about 126 °C, for a single sample), far below the trip level (raw ~4010). If the fault shows, check that the tip is seated: a tip making poor contact behaves as in SF-7.
+- **SF-9 Cold tip reads low (#3).** Cold tip inserted, station Off, `python tools/capture.py --seconds 60`.
+  Expected: `adc_raw` stays within 0–30 and the fault list shows `None`. Reference values from #3 (30 s): min 0, max 26, mean 10.3, stdev 4.8; raw 0 in about 5 % of the samples. This is why there is no "reading near 0" sensor fault: a cold tip would false-trip it.
 
 ## 7. Beeps
 

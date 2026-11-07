@@ -6,10 +6,10 @@ How work on this project goes from a GitHub issue to `main`. Each phase has a Cl
 |---|---|---|
 | Start | `/start-issue <n>` | Branch from an up-to-date `main`, issue to *In Progress* on the board, short plan for approval |
 | Work | (normal conversation) | Implement, you build and test on the device |
-| Commit | `/commit-issue <n>` | Checks, one self-contained commit with a message written by Claude, pushed after your review; the first one opens a draft PR |
-| Finish | `/finish-issue <n>` | Confirm hardware tests, write the final PR title and description; after you've merged it: clean up |
+| Commit | `/commit-issue <n>` | Checks, one self-contained commit with a message written by Claude, pushed after your review; the first one opens a draft PR; later ones keep a real PR description current |
+| Finish | `/finish-issue <n>` | Confirm hardware tests, write the final PR title and description (again after review rounds, to refresh it); after you've merged it: clean up |
 
-An issue normally gets several commits, and work on an issue can go back and forth between *Work* and *Commit* several times before it's finished.
+An issue normally gets several commits, and work on an issue can go back and forth between *Work* and *Commit* several times before it's finished, also after the PR is *Ready for review* (see "Review rounds" below).
 
 ## Conventions
 
@@ -52,6 +52,10 @@ An issue normally gets several commits, and work on an issue can go back and for
     Which commit bullets are irrelevant is listed in `docs/commit-messages.md` (in short: fixes, tests, anything superseded, stale notes, housekeeping; "Also:" items and still-true "NOTE:" items stay).
   - The repository must use the PR title and description as the squash commit message: Settings → General → Pull Requests → squash merging → "Default to pull request title and description".
 - The draft PR is opened right after the issue's first commit, without reviewers and with a placeholder description (plus `Closes #<n>`), so CI runs on every push while work continues. The real title and description are only written after the hardware tests are confirmed. The test record isn't part of the description, since that ends up on `main`.
+- **Review rounds.** Commits on a PR that is already *Ready for review* are normal: they come from review comments and are made with `/commit-issue` like any other, pushed right away (no amending, no force-push), and the PR stays as it is - it's never converted back to a draft. Because the description becomes the squash commit on `main`, it must describe the branch as it is at the moment of merge:
+  - once the PR has its real description, `/commit-issue` refreshes it after every push (with the `pr-description` agent) and reports what changed. Most review fixes change nothing, since fixes, tests and housekeeping are dropped from the description; a change that alters what the branch does, a value that was reworked, or a "NOTE:" that no longer holds does change it;
+  - `/finish-issue` can be run again after a review round for the same refresh, and to confirm the hardware tests of the code that changed;
+  - before merging, check the description once more: what's in the PR when you press *Squash and merge* is what lands on `main`.
 - After the merge: switch to the updated `main`, delete the local issue branch, and check that the issue is closed and *Done* on the board.
 
 ## Tool notes

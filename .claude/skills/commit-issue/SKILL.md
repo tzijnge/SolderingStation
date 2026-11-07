@@ -1,6 +1,6 @@
 ---
 name: commit-issue
-description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, stages the work as one self-contained commit (split only when the user asks, and only into commits that each build and pass tests), writes the message per docs/commit-messages.md, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
+description: Commit the current work for a GitHub issue of this repo onto its issue branch - creates/switches to the branch "#<n>-<issue-title-with-dashes>", checks for leftovers and line-ending noise, stages the work as one self-contained commit (split only when the user asks, and only into commits that each build and pass tests), writes the message per docs/commit-messages.md, commits after the user's review and pushes each commit; opens a draft PR for the branch after its first commit, and keeps the PR's description current when further commits (e.g. from review comments) change it. Use when the user asks to commit work for an issue (e.g. "/commit-issue 1", "commit this for #3").
 argument-hint: <issue number>
 ---
 
@@ -82,10 +82,18 @@ After the first push of a branch, check for a PR: `gh pr list -R tzijnge/Solderi
   ```
 - `gh pr create -R tzijnge/SolderingStation --draft --base main --head '<branch>' --title '<title>' --body-file <file>`.
 
-If an open PR exists, leave it alone; if it isn't a draft any more, mention that (the user may have marked it ready too early).
+If an open PR exists, leave its state alone: commits on a PR that is already *Ready for review* are normal (they come from review comments), so never convert it back to a draft and don't comment on it not being a draft. Its description may need a refresh: step 11.
 
-## 11. Finish
+## 11. Keep the PR description current
+
+Only when the PR already has its real description, i.e. its body doesn't start with the placeholder "Work in progress" (`gh pr view <pr> -R tzijnge/SolderingStation --json body,isDraft`). With the placeholder, nothing to do - `/finish-issue` writes the description later.
+
+The description is the future squash commit on `main`, so it must describe the branch as it is after this commit:
+- Run the `pr-description` agent in the foreground, as in `/finish-issue` part A step 4, with the context it can't see: what the new commits changed, what was tested on the device, which earlier items they supersede.
+- Compare the result with the current body. If the same (typical for a commit with only fixes, tests or housekeeping, which `docs/commit-messages.md` lists as irrelevant), say "PR description unchanged". Otherwise update it with `gh pr edit <pr> -R tzijnge/SolderingStation --title '<title>' --body-file <file>` and report which bullets were added, dropped or reworded, so the user can disagree.
+
+## 12. Finish
 
 - `git status --short` must be clean (or only show what the user chose to leave out), `git log --oneline main..HEAD` lists the new commits, and `git status -sb` shows the branch in sync with origin.
 - The PR closes the issue - so no closing keywords (`Closes #n`) in commits.
-- Report the commits (hash, subject, topic), the PR link, and anything not verified, e.g. intermediate commits of a split not built on their own (Claude doesn't run `pio`; until CI exists, only the user's build of the final state is verified).
+- Report the commits (hash, subject, topic), the PR link, whether the PR description changed (step 11), and anything not verified, e.g. intermediate commits of a split not built on their own (Claude doesn't run `pio`; until CI exists, only the user's build of the final state is verified).

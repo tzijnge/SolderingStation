@@ -51,4 +51,4 @@ stateDiagram-v2
 
 **RPC inputs** ([src/rpc/InputService.h](../src/rpc/InputService.h)) call the same delegates as the knob and buttons, so the FSM can't tell them apart. That includes acknowledging a fault and switching the heater on from a PC. There's no other path from RPC to the heater.
 
-**Fault sources** (`SafetyMonitor::Fault`): `OverTemperature` (tip above 450 °C), `ThermalRunaway` (duty ≥ 200 for 3 s while below 150 °C, without rising 20 °C), `HeaterSaturated` (duty ≥ 200 for 15 s without a break). Entering Fault beeps twice, since while soldering the user is likely not watching the screen.
+**Fault sources** (`SafetyMonitor::Fault`): `OverTemperature` (tip above 450 °C on a single sample; it also trips, in every state, when a tip disconnected from a connected cable picks up enough mains hum to swing to the top of the ADC range, but that is environment-dependent, not a reliable missing-tip check), `ThermalRunaway` (duty ≥ 200 for 3 s while below 150 °C, without rising 20 °C), `HeaterSaturated` (duty ≥ 200 for 15 s without a break). Entering Fault beeps twice, since while soldering the user is likely not watching the screen.
