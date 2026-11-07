@@ -54,6 +54,7 @@ Closes #<n>
   - anything reverted, superseded or made redundant by a later commit on the same branch - describe only the end result (a banner later replaced by a full screen: only the screen; a value changed twice: only its final value; a file added and removed again: nothing);
   - notes that no longer hold at the end of the branch: "not yet tested" when it was tested later, "intermediate state not built", references to other commits of the branch;
   - pure housekeeping: formatting, line endings, whitespace, comment rewording.
+- The description always reflects the whole branch as it is now. After later commits (for example from review comments) it is written again from all the issue's commits, not patched: a review fix that reworks something the description mentions replaces that bullet's content; a pure fix, test or housekeeping commit leaves the description unchanged.
 - Keep "Also:" items (real changes on main, outside the issue's scope) and "NOTE:" items that are still true at the end of the branch, e.g. code still marked TEMPORARY - check the final code.
 - Merge duplicates across commits into one bullet. Order: the issue's own features first, then supporting changes, then "Also:", then "NOTE:".
 - A blank line, then `Closes #<n>` as the very last line - the only place a closing keyword is allowed, because it closes the issue when the PR is merged. No trailers.
