@@ -6,6 +6,10 @@ of the raw ADC value, the measured temperature and the duty, plus the faults
 seen. For characterising the tip sensor input (issue #3) without reading
 values off a plot. Read-only: it doesn't send any input to the station.
 
+Ctrl+C ends the capture early and still prints the summary. With --csv every
+sample (setpoint, measured, filtered, duty, adc_raw, fault) is written to the
+file as it arrives, so a capture that is killed keeps what it has recorded.
+
 Usage, from the repo root (after `pip install -r tools/requirements.txt`):
 
     python tools/capture.py [--seconds 10] [--port COM5] [--csv samples.csv]
@@ -55,14 +59,14 @@ def describe(name: str, values: list[float], digits: int = 1) -> str:
     "--csv",
     "csv_path",
     type=click.Path(dir_okay=False, path_type=Path),
-    help="Also write every sample to this CSV file (time received, raw, measured, duty), to analyse the series.",
+    help="Also write every sample to this CSV file (all telemetry fields), to analyse the series. "
+    "Written as the samples arrive, so it's complete up to the moment the capture stops, however it stops.",
 )
 def main(seconds: float, port: str | None, csv_path: Path | None) -> None:
     if port is None:
         raise click.UsageError("no --port given and no port in lrpcc.config.yaml")
 
     lrpc_def = load_lrpc_def(DEFINITION)
-    fault = lrpc_def.enum("Fault")
 
     raw: list[int] = []
     measured: list[float] = []
@@ -71,33 +75,50 @@ def main(seconds: float, port: str | None, csv_path: Path | None) -> None:
     faults: Counter[str] = Counter()
     received: list[float] = []
 
-    with serial.Serial(port, timeout=2) as transport:
-        client = LrpcClient(lrpc_def, transport)
-        start = time.monotonic()
-        deadline = start + seconds
-        try:
-            for response in client.communicate_all("telemetry", "samples", start=True):
-                received.append(time.monotonic() - start)
-                sample = response.payload
-                raw.append(sample["adc_raw"])
-                measured.append(sample["measured"])
-                duty.append(sample["duty"])
-                setpoint.append(sample["setpoint"])
-                faults[str(sample["fault"])] += 1
-                if time.monotonic() >= deadline:
-                    break
-        finally:
-            next(client.communicate_all("telemetry", "samples", start=False), None)
+    csv_file = None
+    if csv_path is not None:
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        csv_file = csv_path.open("w", encoding="utf-8")
+        csv_file.write("t_s,setpoint,measured,filtered,duty,adc_raw,fault\n")
+        csv_file.flush()
+
+    try:
+        with serial.Serial(port, timeout=2) as transport:
+            client = LrpcClient(lrpc_def, transport)
+            start = time.monotonic()
+            try:
+                for response in client.communicate_all("telemetry", "samples", start=True):
+                    t = time.monotonic() - start
+                    sample = response.payload
+                    received.append(t)
+                    raw.append(sample["adc_raw"])
+                    measured.append(sample["measured"])
+                    duty.append(sample["duty"])
+                    setpoint.append(sample["setpoint"])
+                    faults[str(sample["fault"])] += 1
+                    if csv_file is not None:
+                        # Flushed per sample (10 per second): a capture that is killed or crashes keeps
+                        # everything up to that point.
+                        csv_file.write(
+                            f"{t:.3f},{sample['setpoint']},{sample['measured']:.2f},{sample['filtered']:.2f},"
+                            f"{sample['duty']},{sample['adc_raw']},{sample['fault']}\n"
+                        )
+                        csv_file.flush()
+                    if t >= seconds:
+                        break
+            except KeyboardInterrupt:
+                # Ctrl+C ends the capture early; the summary of what was captured follows.
+                click.echo("Interrupted, stopping the stream")
+            finally:
+                next(client.communicate_all("telemetry", "samples", start=False), None)
+    finally:
+        if csv_file is not None:
+            csv_file.close()
 
     if not raw:
         raise click.ClickException("no samples received")
 
-    if csv_path is not None:
-        lines = ["t_s,adc_raw,measured,duty"]
-        lines += [f"{t:.3f},{r},{m:.2f},{d}" for t, r, m, d in zip(received, raw, measured, duty)]
-        csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-    click.echo(f"{len(raw)} samples in {seconds:g} s from {port}")
+    click.echo(f"{len(raw)} samples in {received[-1]:.1f} s from {port}")
     click.echo(describe("adc_raw", raw, 1))
     click.echo(describe("measured", measured, 1))
     click.echo(describe("duty", duty, 0))
