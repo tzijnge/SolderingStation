@@ -72,7 +72,10 @@ private:
   static constexpr int32_t HINT_Y = 220;
 
   // Built at runtime rather than a constexpr literal, so the over-temperature
-  // message always shows the actual SafetyMonitor limit. The limit is shown
+  // message always shows the actual SafetyMonitor limit. "or missing": a tip
+  // that's disconnected from a connected cable can read at the top of the ADC
+  // range (see SafetyMonitor::OVER_TEMPERATURE_LIMIT_C), which looks exactly
+  // like a tip above the limit. The limit is shown
   // in whole degrees (it's a float only for the comparison); "C" rather than
   // a degree sign, since the fonts used here are plain ASCII. No "FAULT"
   // prefix - the warning sign says that.
@@ -83,7 +86,7 @@ private:
     switch (fault)
     {
     case SafetyMonitor::Fault::OverTemperature:
-      stream << "Tip above " << static_cast<int>(SafetyMonitor::OVER_TEMPERATURE_LIMIT_C) << "C limit";
+      stream << "Tip above " << static_cast<int>(SafetyMonitor::OVER_TEMPERATURE_LIMIT_C) << "C or missing";
       break;
     case SafetyMonitor::Fault::ThermalRunaway:
       stream << "Tip not heating up";

@@ -189,4 +189,6 @@ python tools/telemetry.py [--port COM5]
 
 Without `--port` it takes the port from `lrpcc.config.yaml`. Open Teleplot in VS Code (not connected to the serial port, which the script holds); it plots `setpoint` (0 while not On), `measured`, `measuredFiltered`, `measuredAvg` (2 s moving average, calculated by the script), `duty`, `adcRaw` and `fault`. Ctrl+C stops the stream. The station also stops it when the port is closed, so a killed script leaves nothing running.
 
+`tools/capture.py` reads the same stream for a few seconds (`--seconds`, default 10) and prints a summary instead of plotting: min, max, mean and standard deviation of `adc_raw` and `measured`, the duty, the faults seen and the lowest raw values. It's read-only, and meant for characterising the sensor input. It needs the serial port too, so close the telemetry script first.
+
 `TemperatureController`'s `Kp`/`Ki`/`Kd` gains are placeholders — this project has no characterized plant model (heater wattage, thermal mass, sensor lag), so they need on-device tuning: start with pure P, observe steady-state behavior, add `Ki` to remove steady-state error, and only add `Kd` afterward if overshoot still needs taming.

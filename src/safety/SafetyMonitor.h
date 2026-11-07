@@ -18,8 +18,9 @@
 // state), which also asks condition() to refuse an acknowledgement while
 // the cause is still there.
 //
-// Further fault sources (sensor fault, supply voltage, tip detection -
-// issues #3, #5, #8) add an enumerator and a check here.
+// Further fault sources (supply voltage, tip detection - issues #5, #8) add
+// an enumerator and a check here. There is deliberately no separate sensor
+// fault (issue #3) - see OVER_TEMPERATURE_LIMIT_C and checkRunaway().
 class SafetyMonitor
 {
 public:
@@ -85,6 +86,22 @@ public:
   // saturates at ~459.5C (raw ADC 4095), so anything higher can't be told
   // apart from 459.5 anyway - a limit above that could never trip. Public so
   // FaultScreen can show the actual limit in its message.
+  //
+  // This sometimes also trips for a tip that's disconnected from a connected
+  // cable, but that is not a reliable sensor fault check (measured in issue
+  // #3). In the measured setup the open input picks up the mains field (50
+  // Hz, aliased by the 10Hz sampling into a ~7s swing) with an amplitude
+  // beyond the ADC range, so the reading goes to 4095 for seconds at a time,
+  // in every station state, and trips this on its first sample. That depends
+  // on cable and environment; without the pickup, an open input rests low,
+  // like a cold tip. There is no check on that: a cold tip reads raw 0..28
+  // (0 in ~5% of the samples, so a "reads 0" check would false-trip), a bare
+  // connector with no cable shows pickup up to ~250 (up to ~860 while
+  // plugging in), and neither can be told from a working tip at 20..60C.
+  // Reliable detection needs a hardware change.
+  //
+  // A single sample is deliberate: a missed real over-temperature costs more
+  // than a spurious trip costs a knob press.
   static constexpr float OVER_TEMPERATURE_LIMIT_C = 450.0f;
 
 private:
