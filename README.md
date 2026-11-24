@@ -104,6 +104,10 @@ tip sensor (16uV/°C) -> PCB amplifier (gain 68000/150) -> ADC (12-bit, 3.3V ref
 
 These are tracked in issues #3, #4 and #7. Until they're implemented, do not leave the station heating unattended.
 
+### Modifications to the Elektor design
+
+Changes to the original Elektor board and wiring (a 12 Ω R6 for the 3.3 V gate drive, and a twisted wire with an RC filter on the ADC input) are listed in [docs/hardware-modifications.md](docs/hardware-modifications.md).
+
 ### Front panel
 
 A PCB used as the enclosure's front panel (black soldermask, white silkscreen), KiCad 10 project in `hardware/frontpanel/`. It carries the mains switch, the WIO Terminal (plugged into a 40-pin header on the front), the Qwiic Twist knob (on the back, plugged into a socket) and the XLR socket for the iron. All routing is on the back layer, so nothing shows through the soldermask on the front.
